@@ -22,10 +22,10 @@ import src.phaseSpaceSampler as smp
 N = 10000       # Number of data-points
 
 # Simulation Parameters
-dt = 0.001      # Time Step for Simulation
+dt = 0.01      # Time Step for Simulation
 
-m0 = 1          # Mass
-k0 = 1          # Spring Constant
+m0 = 1000          # Mass
+k0 = 1000          # Spring Constant
 
 # File parameters
 fileName = 'massSpringData.csv'
@@ -35,7 +35,7 @@ fileName = 'massSpringData.csv'
 solver = ode.ODESolver()
 sampler = smp.phaseSpaceSampler()
 
-samples = sampler.latinHypercubeSampler( [[0,0],[-20,20],[-20,20]], 1000, [1,40,40] )
+samples = sampler.latinHypercubeSampler( [[0,0],[-2000,2000],[-2000,2000]], N, [1,500,500] )
 
 odeStartSample = [[sample[0],sample[1:]] for sample in samples]
 odeFinalSample = [ solver.setSystem(ode.massSpringSystem, odeStart, [m0, k0]).eulerSolverStep(dt) for odeStart in odeStartSample]
