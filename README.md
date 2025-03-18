@@ -1,2 +1,2 @@
 # pic-dev
-Temp Name - FOR PIC
+Projeto Integrador de Curso vibes :3
