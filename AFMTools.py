@@ -21,14 +21,21 @@ class GLWidget(QGLWidget):
         QGLWidget.__init__(self, parent)
     
     def initializeGL(self):
-        self.qglClearColor(QColor(0, 0, 250))
+        self.qglClearColor(QColor(80, 80, 140))
         gl.glEnable(gl.GL_DEPTH_TEST)
 
         self.initGeometry()
 
-        self.rotX = 0.0
-        self.rotY = 0.0
-        self.rotZ = 0.0
+        self.x_rot = 0
+        self.y_rot = 0
+        self.last_x = 0
+        self.last_y = 0
+        self.is_dragging = False
+        self.cameraDist = 3.0
+        self.scrollSensitivity = 0.005
+        self.axesMult = 0.10
+        self.axesAdd = 30
+        self.axesCamera = 3.0
 
     def resizeGL(self, width, height):
         gl.glViewport(0, 0, width, height)
@@ -38,44 +45,94 @@ class GLWidget(QGLWidget):
 
         GLU.gluPerspective(45.0, aspect, 1.0, 100.0)
         gl.glMatrixMode(gl.GL_MODELVIEW)
-    
+
+    def drawAxes(self):        
+        # X
+        gl.glColor3f(1, 0, 0)
+        gl.glBegin(gl.GL_LINES)
+        gl.glVertex3f(0, 0, 0)
+        gl.glVertex3f(1, 0, 0)
+        gl.glEnd()
+        # Y
+        gl.glColor3f(0, 1, 0)
+        gl.glBegin(gl.GL_LINES)
+        gl.glVertex3f(0, 0, 0)
+        gl.glVertex3f(0, 1, 0)
+        gl.glEnd()
+        # Z
+        gl.glColor3f(0, 0, 1)
+        gl.glBegin(gl.GL_LINES)
+        gl.glVertex3f(0, 0, 0)
+        gl.glVertex3f(0, 0, 1)
+        gl.glEnd()
+
     def paintGL(self):
         
-        # Clear canvas
-        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
-        
-        # Render
-        gl.glPushMatrix()    # push the current matrix to the current stack
+        # CLEAR SETUP
+        gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT) # Clear canvas
 
-        gl.glTranslate(0.0, 0.0, -50.0)    # third, translate cube to specified depth
-        gl.glScale(20.0, 20.0, 20.0)       # second, scale cube
-        gl.glRotate(self.rotX, 1.0, 0.0, 0.0)
-        gl.glRotate(self.rotY, 0.0, 1.0, 0.0)
-        gl.glRotate(self.rotZ, 0.0, 0.0, 1.0)
-        gl.glTranslate(-0.5, -0.5, -0.5)   # first, translate cube center to origin
-
+        # Allow for efficient memory access
         gl.glEnableClientState(gl.GL_VERTEX_ARRAY)
         gl.glEnableClientState(gl.GL_COLOR_ARRAY)
 
+        # OBJECTS
+        gl.glPushMatrix()
+        gl.glTranslate(0.0, 0.0, -self.cameraDist)      # Translate (camera pos)
+        gl.glScale(1.0, 1.0, 1.0)           # Scale coords
+        gl.glRotatef(self.x_rot, 1, 0, 0)   # Rotate according to mouse input
+        gl.glRotatef(self.y_rot, 0, 1, 0)   # Rotate according to mouse input
+        gl.glTranslate(-0.5, -0.5, -0.5)    # Center object
         gl.glVertexPointer(3, gl.GL_FLOAT, 0, self.vertVBO)
         gl.glColorPointer(3, gl.GL_FLOAT, 0, self.colorVBO)
-
         gl.glDrawElements(gl.GL_QUADS, len(self.cubeIdxArray), gl.GL_UNSIGNED_INT, self.cubeIdxArray)
+        gl.glPopMatrix()
 
+        gl.glViewport(self.axesAdd, self.axesAdd, int(self.size().width()*self.axesMult), int(self.size().height()*self.axesMult))
+        gl.glPushMatrix()
+        gl.glTranslate(0.0, 0.0, -self.axesCamera)      # Translate (camera pos)
+        gl.glScale(1.0, 1.0, 1.0)           # Scale coords
+        gl.glRotatef(self.x_rot, 1, 0, 0)   # Rotate according to mouse input
+        gl.glRotatef(self.y_rot, 0, 1, 0)   # Rotate according to mouse input
+        gl.glTranslate(0, 0, 0)
+        self.drawAxes()
+        gl.glPopMatrix()
+        gl.glViewport(0, 0, self.size().width(), self.size().height())
+
+        # Disable the memory access
         gl.glDisableClientState(gl.GL_VERTEX_ARRAY)
         gl.glDisableClientState(gl.GL_COLOR_ARRAY)
+        
 
-        gl.glPopMatrix()    # restore the previous modelview matrix
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.last_x = event.x()
+            self.last_y = event.y()
+            self.is_dragging = True
 
-    def setRotX(self, val):
-        self.rotX = val
+    def wheelEvent(self, event):
+        self.cameraDist -= event.angleDelta().y()*self.scrollSensitivity
+        if self.cameraDist <= 0:
+            self.cameraDist = 0
 
-    def setRotY(self, val):
-        self.rotY = val
 
-    def setRotZ(self, val):
-        self.rotZ = val
-    
+    def mouseMoveEvent(self, event):
+        if self.is_dragging:
+            dx = event.x() - self.last_x
+            dy = event.y() - self.last_y
+
+            # Update rotation based on mouse movement
+            self.x_rot += dy
+            self.y_rot += dx
+
+            self.last_x = event.x()
+            self.last_y = event.y()
+
+            self.update()
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.is_dragging = False
+
     def initGeometry(self):
         self.cubeVtxArray = np.array(
             [[0.0, 0.0, 0.0],
@@ -122,7 +179,6 @@ class MainWindow(QMainWindow):
         super().__init__(*args, **kwargs)
         
         # Window dimensions/aesthetics
-        self.resize(1080, 480)
         self.setWindowTitle('AFM-Tools')
         
         # Central Widget
@@ -137,16 +193,6 @@ class MainWindow(QMainWindow):
         self.mainBanner = QLabel()
         pixmap = QPixmap("AFMToolsBanner.png")
         self.mainBanner.setPixmap(pixmap)
-
-        # Sliders
-        self.sliderX = QSlider(Qt.Horizontal)
-        self.sliderX.valueChanged.connect(lambda val: self.glWidget.setRotX(val*4))
-
-        self.sliderY = QSlider(Qt.Horizontal)
-        self.sliderY.valueChanged.connect(lambda val: self.glWidget.setRotY(val*4))
-
-        self.sliderZ = QSlider(Qt.Horizontal)
-        self.sliderZ.valueChanged.connect(lambda val: self.glWidget.setRotZ(val*4))
         
         # Layout create
         self.mainLayout = QVBoxLayout()
@@ -169,9 +215,6 @@ class MainWindow(QMainWindow):
         # Layout add widgets
         self.rightTopLayout.addWidget(self.glWidget)
         self.bannerLayout.addWidget(self.mainBanner)
-        self.leftTopLayout.addWidget(self.sliderX)
-        self.leftTopLayout.addWidget(self.sliderY)
-        self.leftTopLayout.addWidget(self.sliderZ)
         
         # Central layout
         self.mainWidget.setLayout(self.mainLayout)
