@@ -3,14 +3,17 @@ João Camacho, 2025
 
 Code adapted from the WPSH203 LCD and
 WPI300 Keypad Manuals.
+
 */
 
-/* //////////////////
+/* ///////////////////
         INCLUDES
-*/ //////////////////
+*/ ///////////////////
 
 #include <LiquidCrystal.h>
 #include <Keypad.h>
+#include <Wire.h>
+#include "Adafruit_MCP23X17.h"
 
 /* ////////////////////
         LCD SCREEN
@@ -54,9 +57,15 @@ char keys[ROWS][COLS] = {
  {'7','8','9'},
  {'*','0','#'}
 };
-byte rowPins[ROWS] = {13, 12, 11, 3}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {2, 1, 0}; //connect to the column pinouts of the keypad
+byte rowPins[ROWS] = {3, 11, 12, 13}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {0, 1, 2}; //connect to the column pinouts of the keypad
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
+
+/* ////////////////////////////////
+       I2C Expander, MCP23017
+*/ ////////////////////////////////
+
+Adafruit_MCP23X17 mcp;
 
 /* ////////////////
         SETUP
@@ -70,6 +79,10 @@ void setup()
   lcd.print("Msg0 ");
   // Serial Setup
   Serial.begin(9600);
+  // I2C Expander, MCP23017
+  mcp.begin_I2C();
+  mcp.pinMode(14, OUTPUT);
+  mcp.digitalWrite(14, HIGH);
 }
 
 /* ////////////////
@@ -78,11 +91,14 @@ void setup()
 
 void loop() {
 
-  // Debug time on LCD
+  // Microphone input
+  int micAnalog = analogRead(A1);
+
+  // DEBUG
   lcd.setCursor(9,1); // move cursor to second line "1" and 9 spaces over
-  lcd.print(millis()/1000); // display seconds elapsed since power-up
+  lcd.print(String(micAnalog)+' '+' '); // display sensor info
   lcd.setCursor(0,1); // move to the begining of the second line
-  
+
   // Read Analog Buttons
   lcd_key = read_LCD_buttons(); // read the buttons
   
@@ -117,10 +133,12 @@ void loop() {
       break;
  
     case btnSELECT:
+      //mcp.digitalWrite(0, HIGH);
       lcd.print("SELECT");
       break;
  
     case btnNONE:
+      //mcp.digitalWrite(0, LOW);
       lcd.print("TEST  ");
       break;
 
