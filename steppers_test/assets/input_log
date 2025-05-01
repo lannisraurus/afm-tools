@@ -1,0 +1,97 @@
+move_stepper 1 0 100 10000
+change_port COM8
+move_stepper 1 0 100 10000
+change_port COM8
+move_stepper 1 0 100 100000
+change_port COM8
+move_stepper 1 0 100 100000
+change_port COM8
+move_stepper 1 0 100 100000
+move_stepper 1 0 100 100000
+move_stepper 1 0 100 100000
+move_stepper 1 0 100 100000
+change_port COM8
+request_commands
+hi
+change_port COM8
+change_port COM8
+save_graph
+discharge_curve -f
+discharge_curve -
+acquire_plot
+acquire
+discharge_curve -c 1 -d 20
+discharge_curve -c 1 -d 20 -f
+discharge_curve -c 1 -d 20
+discharge_curve -c 1 -d 10 -f
+save_graph
+discharge_curve -f
+save_graph
+discharge_curve -f
+save_graph
+discharge_curve -f
+save_graph
+acquire_plot
+discharge_curve
+discharge_curve
+acquire
+s
+discharge_curve -c 1 -d 10
+discharge_curve -c 1 -d 10
+discharge_curve -c 1 -d 10 -f
+discharge_curve -c 1 -d 10
+discharge_curve -f -c 1 -d 10
+discharge_curve -f -c 1 -d 10
+discharge_curve -f -c 1 -d 10
+discharge_curve -
+discharge_curve
+discharge_curve
+acquire_plot -x 1000
+acquire_plot -x 100
+swit
+acquire
+request_commands
+acquire_plot
+switch_output_pin
+acquire_plot
+acquire_plot
+acquire_plot
+acquire_plot
+acquire_plot
+acquire_plot
+acquire_plot
+acquire_plot
+acquire_plot
+switch_output_pin
+acquire_plot
+acquire_plot
+switch_output_pin
+switch_output_pin
+acquire_plot
+acquire_plot
+switch_output_pin
+switch_output_pin
+switch_output_pin
+acquire_plot
+yegdyufwe
+switch_output_pin
+change_output_pin 2
+switch_output_pin
+acquire_plot
+switch_output_pin
+switch_output_pin
+switch_output_pin
+switch_output_pin
+clear_graph
+switch_output_pin
+switch_output_pin
+switch_output_pin
+a
+switch_output_pin
+switch_
+acquire
+request_commands
+swit
+set_titles -g "t i t u l o" -x "eixo x" -y yy
+acquire_plot
+TEST

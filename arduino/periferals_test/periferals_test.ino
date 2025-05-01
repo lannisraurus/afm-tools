@@ -11,9 +11,11 @@ WPI300 Keypad Manuals.
 */ ///////////////////
 
 #include <LiquidCrystal.h>
+
 #include <Keypad.h>
+
 #include <Wire.h>
-#include "Adafruit_MCP23X17.h"
+#include <Adafruit_MCP23X17.h>
 
 /* ////////////////////
         LCD SCREEN
@@ -57,13 +59,13 @@ char keys[ROWS][COLS] = {
  {'7','8','9'},
  {'*','0','#'}
 };
-byte rowPins[ROWS] = {3, 11, 12, 13}; //connect to the row pinouts of the keypad
-byte colPins[COLS] = {0, 1, 2}; //connect to the column pinouts of the keypad
+byte rowPins[ROWS] = {A5, 11, 12, 13}; //connect to the row pinouts of the keypad
+byte colPins[COLS] = {0, 1, A4}; //connect to the column pinouts of the keypad
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
-/* ////////////////////////////////
-       I2C Expander, MCP23017
-*/ ////////////////////////////////
+/* ////////////////////////////
+        I2C PORT EXPANDER
+*/ ////////////////////////////
 
 Adafruit_MCP23X17 mcp;
 
@@ -73,17 +75,29 @@ Adafruit_MCP23X17 mcp;
 
 void setup()
 {
+
   // Setup LCD Library
   lcd.begin(16, 2);
   lcd.setCursor(0,0);
   lcd.print("Msg0 ");
+
   // Serial Setup
   Serial.begin(9600);
-  // I2C Expander, MCP23017
-  mcp.begin_I2C();
-  mcp.pinMode(14, OUTPUT);
-  mcp.digitalWrite(14, HIGH);
+
+  // MCP Setup
+  if (!mcp.begin_I2C()) {
+    Serial.println("ERROR: Couldn't find MCP23017!");
+  }else{
+    Serial.println("MCP23017 initialized!");
+  }
+  
+  for (uint8_t i = 0; i < 4; i++) {
+    mcp.pinMode(i, OUTPUT);
+    mcp.digitalWrite(i, LOW);
+  }
+
 }
+
 
 /* ////////////////
         LOOP
@@ -93,10 +107,13 @@ void loop() {
 
   // Microphone input
   int micAnalog = analogRead(A1);
+  int rotaryAnalog1 = analogRead(A2);
+  int rotaryAnalog2 = analogRead(A3);
 
-  // DEBUG
-  lcd.setCursor(9,1); // move cursor to second line "1" and 9 spaces over
-  lcd.print(String(micAnalog)+' '+' '); // display sensor info
+  // Analog Inputs
+  lcd.setCursor(6,1);
+  lcd.print(String(micAnalog)+' '); // display sensor info
+  lcd.print(String(rotaryAnalog1)+' '+String(rotaryAnalog2)+' '); // display sensor info
   lcd.setCursor(0,1); // move to the begining of the second line
 
   // Read Analog Buttons
@@ -135,11 +152,13 @@ void loop() {
     case btnSELECT:
       //mcp.digitalWrite(0, HIGH);
       lcd.print("SELECT");
+      mcp.digitalWrite(0, HIGH);
       break;
  
     case btnNONE:
       //mcp.digitalWrite(0, LOW);
       lcd.print("TEST  ");
+      mcp.digitalWrite(0, LOW);
       break;
 
   }
