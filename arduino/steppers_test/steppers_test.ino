@@ -25,6 +25,14 @@ void setup() {
 	// Initialize serial communication at 115200 bits per second:
 	Serial.begin(115200);
   // MOTORS
+  pinMode(dirPin1, OUTPUT);
+  pinMode(stepPin1, OUTPUT);
+  pinMode(enablePin1, OUTPUT);
+  pinMode(dirPin2, OUTPUT);
+  pinMode(stepPin2, OUTPUT);
+  pinMode(enablePin2, OUTPUT);
+  digitalWrite(enablePin1, HIGH); //Put the motor off by default
+  digitalWrite(enablePin2, HIGH); //Put the motor off by default
 }
 
 // Loop for reading and executing commands
@@ -60,7 +68,8 @@ void loop() {
       Serial.print(", steps=");
       Serial.print(steps);
       Serial.print(", step_delay=");
-      Serial.println(step_delay);
+      Serial.print(step_delay);
+      Serial.print(";            ");
 
       MotorMove(motor, dir, steps, step_delay);
 
@@ -81,14 +90,19 @@ void loop() {
 // FUNCTION STOLEN FROM AFM PAPER DONT FORGET TO REFERENCE HEHE
 int MotorMove(int motor, int dir, int steps, int stepDelay){
     if (motor==1){
+     Serial.print("MOVING MOTOR 1. ");
      digitalWrite(enablePin1, LOW); //LOW active, HIGH inactive
+     Serial.print("ENABLED. ");
      digitalWrite(dirPin1, dir);   //HIGH right, LOW left
+     Serial.print("DIR. ");
      for (int x = 0; x < steps; x++) {
+      Serial.print("STEP. ");
        digitalWrite(stepPin1, HIGH);
        delayMicroseconds(stepDelay);
        digitalWrite(stepPin1, LOW);
        delayMicroseconds(stepDelay);
      }
+     Serial.println("FINISHED. ");
      digitalWrite(enablePin1, HIGH);
     }
     else if (motor==2){

@@ -1,3 +1,68 @@
+move_stepper 1 0 80000 80000
+move_stepper 1 0 80000 80000
+change_port COM8
+move_stepper 1 0 80000 80000
+move_stepper 1 0 80000 80000
+change_port COM8
+move_stepper 1 0 80000 80000
+change_port COM3
+move_stepper 1 0 70000 70000
+change_port COM3
+move_stepper 1 0 70000 70000
+change_port COM3
+move_stepper 1 0 70000 70000
+change_port COM3
+move_stepper 1 0 100000 999000
+change_port COM3
+move_stepper 1 0 100000 1000000
+change_port COM3
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+move_stepper 1 0 10000 100000
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+change_port COM3
+move_stepper 1 0 1000 1000
+clear
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+change_port COM3
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+clear
+move_stepper 1 0 1000 1000
+move_stepper 1 0 1000 1000
+move_stepper 1 0 100 1000
+move_stepper 1 0 100 100
+move_stepper 1 0 10 100
+move_stepper 2 0 10 100
+change_port COM3
+move_stepper 2 0 10 10000
+move_stepper 2 0 100 10000
+move_stepper 0 0 100 10000
+move_stepper 1 0 100 10000
+move_stepper 2 0 100 10000
+move_stepper 2 0 100 10000
+move_stepper 2 1 100 10000
+move_stepper 2 0 100 10000
+change_port COM3
+move_stepper 1 0 100 10000
+move_stepper 1 0 1000 10000
+move_stepper 1 0 1000 10000
+move_stepper 1 0 1000 10000
+move_stepper 1 0 100 10000
+move_stepper 2 0 100 10000
+move_stepper 2 0 100 10000
+change_port COM3
+move_stepper 2 0 100 10000
+change_port COM3
+move_stepper 1 0 100 10000
+change_port COM3
+change_port COM8
 move_stepper 1 0 100 10000
 change_port COM8
 move_stepper 1 0 100 10000
