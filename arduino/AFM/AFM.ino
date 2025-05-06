@@ -10,9 +10,10 @@ WPI300 Keypad Manuals. AND AFM PAPER REFERENCE
         INCLUDES
 */ ///////////////////
 
-#include <LCD_I2C.h>
-#include <Keypad.h>
-#include <Wire.h>
+#include <LCD_I2C.h>    // I2C LCD.
+#include <Keypad.h>     // For taking in user input.
+#include "Keyboard.h"   // For sending commands to AFM computer.
+#include <Wire.h>       // For I2C.
 
 /* ////////////////////
         LCD SCREEN
@@ -65,20 +66,36 @@ unsigned int endLoopTime = 0;      // Keeps track of the times in which the main
 unsigned int loopDt = 0;           // Difference between the two previous variables. ms.
 
 // Autoscrolling variables
-const int lcdHorizontalScrollStep = 5;   // How many characters are skipped per autoscroll step.
+const int lcdHorizontalScrollStep = 4;   // How many characters are skipped per autoscroll step.
 const int lcdHorizontalScrollMax = 750;  // Controlls how often the line display scrolls. ms.
-const int lcdHorizontalScrollMin = -1110;// Reset tolerance in beginning and end of scroll. ms.
+const int lcdHorizontalScrollMin = -1310;// Reset tolerance in beginning and end of scroll. ms.
 int lcdHorizontalScrollCounter1 = 0;     // Keeps track of how much time has passed since a scroll - Line 1. ms.
 int lcdHorizontalScrollCounter2 = 0;     // Keeps track of how much time has passed since a scroll - Line 2. ms.
 byte lcdHorizontalScrollPivot1 = 0;      // Keeps track of where the scroll is currently - Line 1.
 byte lcdHorizontalScrollPivot2 = 0;      // Keeps track of where the scroll is currently - Line 2.
+int lcdVerticalScrollCounter = 0;        // Allows for vertical scrolling by line, as per menu command.
+int lcdVerticalScrollPivot = 0;          // Which element is being selected
+const int lcdVerticalScrollMax = 1720;   // Vertical scroll amount of time on screen. ms.
 
 // Display LCD data
 char* lcdLine1 = " ";       // Line 1 of the LCD
 char* lcdLine2 = " ";       // Line 2 of the LCD
 String msg_operation = "";  // For intermediate conversions of Strings to c_str (char*)
-char * msg_scrollInstructions = "[*/#]: Scroll";
-char * msg_obfuscated = "################";
+
+const char * msg_scrollInstructions = "[*/#]: Scroll";
+const char * msg_obfuscated = "################";
+
+const char * msg_menu3[] = {"[0]: Settings", "[1]: Acquire", "[*]: Return"};
+const int msg_menu3_size = 3;
+
+const char * msg_menu2[] = {"[0]: Callibrate", "[#/*]: Scroll"};
+const int msg_menu2_size = 2;
+
+const char * msg_menu1[] = {"[0]: Settings", "[5]: View steps", "[4]: Move X-", "[6]: Move X+", "[8]: Move Y-", "[2]: Move Y+", "[#/*]: Scroll"};
+const int msg_menu1_size = 7;
+
+const char * msg_menu02[] = {"[0]: Motor X", "[1]: Motor Y", "[#/*]: Scroll"};
+const int msg_menu02_size = 3;
 
 // Motor Wiring Variables
 const int dirPinX = 8;
@@ -88,24 +105,128 @@ const int dirPinY = 11;
 const int stepPinY = 12;
 const int enablePinY = 13;
 
-// !!! AFM VARIABLES !!!
+// Debug Motor Variables
+int debugMotorSteps = 1024;
+long debugMotorDelay = 900000;
+
+////////////////////////////// !!! AFM VARIABLES !!!
+
+// Manual movement variables
+long manual_delay = 900000;
+int manual_steps = 128;
+
+// Step counters
+int steps_X = 0;
+int steps_Y = 0;
+
+// Acquisition variables
+float Hz = 1;
+int lines = 512;
+char* setpoint = "0.2";
+
 
 /* ///////////////////
         ROUTINES
 */ ///////////////////
 
-// Move one of the motors, given their pins.
-void moveMotor(int stepPin, int dirPin, int enablePin, int steps, int stepDelay, int direction){
+void lcdPrint(int row, char* line, byte* pivot, int* clock); // Declaration so that the compiler doesn't scream at me.
+void updateDisplay();
+
+// Move one of the motors, given their pins. NOTE: ADD UPDATE TO POS_X AND POS_Y!!!
+void moveMotor(int stepPin, int dirPin, int enablePin, int steps, long stepDelay, int direction, int* stepCounter){
   digitalWrite(enablePin, LOW);
   digitalWrite(dirPin, direction);
   for (int x = 0; x < steps; x++) {
     digitalWrite(stepPin, HIGH);
-    delayMicroseconds(stepDelay);
+    delayMicroseconds(stepDelay/2);
     digitalWrite(stepPin, LOW);
-    delayMicroseconds(stepDelay);
+    delayMicroseconds(stepDelay/2);
   }
   digitalWrite(enablePin, HIGH);
+  *stepCounter += steps;
 }
+
+// Acquire an AFM image.
+void AFMing(char setpoint_char, int lines, float Hz){
+    
+    // Autotune - CHANGE DELAYS, WHAT SHOULD THEY BE? HOW COUKD WE DETECT? SHOULD WE AUTOTUNE ALL THE TIME?
+    lcdLine1 = "Autotuning...";
+    lcdLine2 = " ";
+    updateDisplay();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('v');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('w');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('c');delay(200);Keyboard.releaseAll();
+    delay(500);
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('p');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('a');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('t');delay(200);Keyboard.releaseAll();
+    delay(15000);
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('b');delay(200);Keyboard.releaseAll();
+    delay(1000);
+    
+    // Engage
+    Keyboard.press(KEY_LEFT_CTRL);Keyboard.press('e');delay(200);Keyboard.releaseAll();
+    
+    // Wait for completion of engage. NOTE: WHAT SHOULD THE THRESHOLD BE?
+    lcdLine1 = "Engaging...";
+    lcdLine2 = " ";
+    updateDisplay();
+    while( analogRead(micPin) < 800 ) {}
+    delay(1500);
+    
+    // Amplitude Setpoint
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('p');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('f');delay(200);Keyboard.releaseAll();
+    delay(500);
+    Keyboard.press(KEY_DOWN_ARROW);delay(100);Keyboard.releaseAll();
+    delay(200);
+    Keyboard.press(KEY_DOWN_ARROW);delay(100);Keyboard.releaseAll();
+    delay(200);
+    Keyboard.press(KEY_DOWN_ARROW);delay(100);Keyboard.releaseAll();
+    delay(200);
+    Keyboard.press('0');delay(200);Keyboard.press('.');delay(200);Keyboard.press(setpoint_char);delay(200);Keyboard.press(KEY_RETURN);Keyboard.releaseAll();delay(200); //0.2 modify for your value
+    
+    //Start Frame Down
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('f');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('d');delay(200);Keyboard.releaseAll();    
+    
+    //Reverse to avoid distortion
+    delay(12000);
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('f');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('r');delay(200);Keyboard.releaseAll();
+    
+    //Start Capture and withdraw when finished
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('c');delay(200);Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT);Keyboard.press('w');delay(200);Keyboard.releaseAll();
+    
+    // Define Acquisition time-keeping varibles
+    float acquisitionTime=((float) lines)*1000;
+    acquisitionTime=acquisitionTime/Hz;
+    acquisitionTime=acquisitionTime+20000; //Wait 512 lines/1 Hz = 512 s = 8min53s. We add 20s just in case.
+    unsigned long sec_timer=0;
+    unsigned StartTime = millis();
+    unsigned secs = millis();
+    unsigned CurrentTime = millis();
+
+    // Wait until image is done.
+    while((CurrentTime - StartTime) < ((unsigned long) acquisitionTime)){
+      secs=millis();
+      CurrentTime = millis();
+      while((CurrentTime-secs) < 1000) {
+        CurrentTime=millis();
+      }
+      sec_timer=sec_timer+1;
+      
+      msg_operation = "Time (s): "+String((int)sec_timer);
+      lcdLine1 = msg_operation.c_str();
+      lcdLine2 = " ";
+      updateDisplay();   
+    }
+    
+    return 0;  
+}
+
+// AFM Acquire image and wait for beep
 
 /* ///////////////////////
         UI FUNCTIONS
@@ -171,6 +292,8 @@ void switchMenu(int m){
   lcdHorizontalScrollCounter2 = lcdHorizontalScrollMin;
   lcdLine1 = msg_obfuscated;
   lcdLine2 = msg_obfuscated;
+  lcdVerticalScrollPivot = 0;
+  lcdVerticalScrollCounter = 0;
 }
 
 // Update LCD Display
@@ -182,18 +305,36 @@ void updateDisplay(){
 // Menu loop
 void menuLoop(){
   switch (menu) {
+
+    case 10:
+      msg_operation = "X="+String(steps_X)+" Y="+String(steps_Y);
+      lcdLine1 = msg_operation.c_str();
+      lcdLine2 = "Any key - Return";
+      if (key) switchMenu(menu/10);
+      break;
     
-    case 2:
+    case 3:
       lcdLine1 = "ACQUISITION - Acquire AFM images.";
-      lcdLine2 = "[0]: Configure, [1]: Begin Acquisition, [*]: Return";
+      if (lcdVerticalScrollPivot >= msg_menu3_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu3[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
+      break;
+
+    case 2:
+      lcdLine1 = "CALLIBRATE - Callibrate AFM.";
+      if (lcdVerticalScrollPivot >= msg_menu2_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu2[lcdVerticalScrollPivot];
+      if (key == '*') switchMenu(menu-1);
+      if (key == '#') switchMenu(menu+1);
       break;
 
     case 1:
       lcdLine1 = "MANUAL - Manually control the stepper motors.";
-      lcdLine2 = "[0]: Configure, [1]: Move X, [2]: Move Y, [#/*]: Scroll";
+      if (lcdVerticalScrollPivot >= msg_menu1_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu1[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
       if (key == '#') switchMenu(menu+1);
+      if (key == '5') switchMenu(menu*10);
       break;
 
     case 0:
@@ -212,7 +353,8 @@ void menuLoop(){
     
     case -2:
       lcdLine1 = "MOTOR DEBUG - Activate both motors to check if the wiring is correct.";
-      lcdLine2 = "[0]: Start Motor X, [1]: Start Motor Y, [#/*]: Scroll";
+      if (lcdVerticalScrollPivot >= msg_menu02_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu02[lcdVerticalScrollPivot];
       if (key == '#') switchMenu(menu+1);
       if (key == '*') switchMenu(menu-1);
       if (key == '0') switchMenu(menu*10);
@@ -230,7 +372,7 @@ void menuLoop(){
       lcdLine1 = "Powering X Motor";
       lcdLine2 = "";
       updateDisplay();
-      moveMotor(stepPinX, dirPinX, enablePinX, 4000, 500, 0);
+      moveMotor(stepPinX, dirPinX, enablePinX, debugMotorSteps, debugMotorDelay, 0, &steps_X);
       switchMenu(menu/10);
       break;
     
@@ -238,7 +380,7 @@ void menuLoop(){
       lcdLine1 = "Powering Y Motor";
       lcdLine2 = "";
       updateDisplay();
-      moveMotor(stepPinY, dirPinY, enablePinY, 4000, 500, 0);
+      moveMotor(stepPinY, dirPinY, enablePinY, debugMotorSteps, debugMotorDelay, 0, &steps_Y);
       switchMenu(menu/10);
       break;
 
@@ -284,6 +426,7 @@ void loop() {
   // Update counters
   lcdHorizontalScrollCounter1 += loopDt;
   lcdHorizontalScrollCounter2 += loopDt;
+  lcdVerticalScrollCounter += loopDt;
 
   // Analog Sensors Input Acquire
   micAnalog = analogRead(micPin);
@@ -295,6 +438,9 @@ void loop() {
 
   // Menu System
   menuLoop();
+
+  // Vertical Scrolling
+  if (lcdVerticalScrollCounter >= lcdVerticalScrollMax) { lcdVerticalScrollCounter = 0; lcdVerticalScrollPivot += 1; }
 
   // Update LCD Display
   updateDisplay();
