@@ -306,6 +306,7 @@ void updateDisplay(){
 void menuLoop(){
   switch (menu) {
 
+    // Manual Movement - See steps.
     case 10:
       msg_operation = "X="+String(steps_X)+" Y="+String(steps_Y);
       lcdLine1 = msg_operation.c_str();
@@ -313,6 +314,7 @@ void menuLoop(){
       if (key) switchMenu(menu/10);
       break;
     
+    // Acquisition routines for the AFM.
     case 3:
       lcdLine1 = "ACQUISITION - Acquire AFM images.";
       if (lcdVerticalScrollPivot >= msg_menu3_size) lcdVerticalScrollPivot = 0;
@@ -320,6 +322,7 @@ void menuLoop(){
       if (key == '*') switchMenu(menu-1);
       break;
 
+    // Callibration routines for the AFM.
     case 2:
       lcdLine1 = "CALLIBRATE - Callibrate AFM.";
       if (lcdVerticalScrollPivot >= msg_menu2_size) lcdVerticalScrollPivot = 0;
@@ -328,15 +331,21 @@ void menuLoop(){
       if (key == '#') switchMenu(menu+1);
       break;
 
+    // Manual movement of stepper motors.
     case 1:
       lcdLine1 = "MANUAL - Manually control the stepper motors.";
       if (lcdVerticalScrollPivot >= msg_menu1_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu1[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
       if (key == '#') switchMenu(menu+1);
-      if (key == '5') switchMenu(menu*10);
+      if (key == '5') switchMenu(menu*10);   // View Steps
+      if (key == '4') switchMenu(menu*10+1); // X- Move
+      if (key == '6') switchMenu(menu*10+2); // X+ Move
+      if (key == '8') switchMenu(menu*10+3); // Y- Move
+      if (key == '2') switchMenu(menu*10+4); // Y+ Move
       break;
 
+    // Welcome splash screen
     case 0:
       lcdLine1 = "WELCOME! - AFM High-Range Automation @ IST";;
       lcdLine2 = msg_scrollInstructions;
@@ -344,15 +353,17 @@ void menuLoop(){
       if (key == '#') switchMenu(menu+1);
       break;
     
+    // Credits screen
     case -1:
-      lcdLine1 = "CREDITS - This project was developed by Joao Camacho [106224], 2025, under the supervision of Prof. Dr. Luis Viseu Melo, in the context of the PIC-I project.";
+      lcdLine1 = "CREDITS - This project was developed by Joao Camacho [106224], 2025, under the supervision of Prof. Dr. Luis Viseu Melo, in the context of the PIC-I project. All the code and information regarding this project can be found at [github.com/lannisraurus/REPONAMEINSERTHERE].";
       lcdLine2 = msg_scrollInstructions;
       if (key == '*') switchMenu(menu-1);
       if (key == '#') switchMenu(menu+1);
       break;
     
+    // Motor debugging - just to check wiring
     case -2:
-      lcdLine1 = "MOTOR DEBUG - Activate both motors to check if the wiring is correct.";
+      lcdLine1 = "MOTOR DEBUG - Activate both motors to check if the wiring is correct. Steps counring will not be updated!";
       if (lcdVerticalScrollPivot >= msg_menu02_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu02[lcdVerticalScrollPivot];
       if (key == '#') switchMenu(menu+1);
@@ -361,6 +372,7 @@ void menuLoop(){
       if (key == '1') switchMenu(menu*10-1);
       break;
     
+    // Sensor data - debugging
     case -3:
       lcdLine1 = "SENSOR DATA - M: Microphone; X: Rotary Encoder X; Y: Rotary Encoder Y; [#] to Return.";
       msg_operation = "M"+String(micAnalog)+" X"+String(rotaryAnalogX)+" Y"+String(rotaryAnalogY);
@@ -368,6 +380,7 @@ void menuLoop(){
       if (key == '#') switchMenu(menu+1);
       break;
     
+    // Motor debugging - Rotate X
     case -20:
       lcdLine1 = "Powering X Motor";
       lcdLine2 = "";
@@ -376,6 +389,7 @@ void menuLoop(){
       switchMenu(menu/10);
       break;
     
+    // Motor debugging - Rotate Y
     case -21:
       lcdLine1 = "Powering Y Motor";
       lcdLine2 = "";
@@ -384,6 +398,7 @@ void menuLoop(){
       switchMenu(menu/10);
       break;
 
+    // Safeguard for undefined behaviour
     default:
       lcdLine1 = "ERR: MENU UNSET!";
       lcdLine2 = ":(";
