@@ -109,7 +109,9 @@ const int enablePinY = 13;
 int debugMotorSteps = 1024;
 long debugMotorDelay = 900000;
 
-////////////////////////////// !!! AFM VARIABLES !!!
+/* ///////////////////////////
+       ! AFM VARIABLES !
+*/ ///////////////////////////
 
 // Manual movement variables
 long manual_delay = 900000;
@@ -123,7 +125,6 @@ int steps_Y = 0;
 float Hz = 1;
 int lines = 512;
 char* setpoint = "0.2";
-
 
 /* ///////////////////
         ROUTINES
