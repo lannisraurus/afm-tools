@@ -14,6 +14,7 @@ WPI300 Keypad Manuals. AND AFM PAPER REFERENCE
 #include <Keypad.h>     // For taking in user input.
 #include "Keyboard.h"   // For sending commands to AFM computer.
 #include <Wire.h>       // For I2C.
+#include <EEPROM.h>     // For keep variables from shutdown.
 
 /* ////////////////////
         LCD SCREEN
@@ -38,9 +39,9 @@ byte rowPins[ROWS] = {A5, 4, 5, 6}; // Row pins. Change accordingly.
 byte colPins[COLS] = {0, 1, A4};    // Collumn pins. Change accordingly.
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
-/* /////////////////////////
-        GLOBAL VARIABLES
-*/ /////////////////////////
+/* //////////////
+        PINS
+*/ //////////////
 
 // Analog Sensor Data
 int micAnalog = -1;     // Microphone reading (buzzer).
@@ -49,6 +50,18 @@ int rotaryAnalogY = -1; // Second Rotary Encoder Y.
 const int micPin = A0;        // Microphone data pin. Change accordingly.
 const int rotaryXPin = A1;    // Rotary Encoder 1 pin. Change accordingly.
 const int rotaryYPin = A2;    // Rotary Encoder 2 pin. Change accordingly.
+
+// Motor Wiring Variables
+const int dirPinX = 8;
+const int stepPinX = 9;
+const int enablePinX = 10;
+const int dirPinY = 11;
+const int stepPinY = 12;
+const int enablePinY = 13;
+
+/* ///////////////////////
+        UI VARIABLES
+*/ ///////////////////////
 
 // Keypad input
 char key = ' ';
@@ -61,9 +74,9 @@ const unsigned int lcdHeight = 2;  // LCD Specs
 int menu = 0;                      // Which menu the user is selecting.
 
 // Timekeeping variables
-unsigned int startLoopTime = 0;    // Keeps track of the times in which the main loop starts. ms.
-unsigned int endLoopTime = 0;      // Keeps track of the times in which the main loop ends. ms.
-unsigned int loopDt = 0;           // Difference between the two previous variables. ms.
+unsigned long startLoopTime = 0;    // Keeps track of the times in which the main loop starts. ms.
+unsigned long endLoopTime = 0;      // Keeps track of the times in which the main loop ends. ms.
+unsigned long loopDt = 0;           // Difference between the two previous variables. ms.
 
 // Autoscrolling variables
 const int lcdHorizontalScrollStep = 4;   // How many characters are skipped per autoscroll step.
@@ -78,78 +91,124 @@ int lcdVerticalScrollPivot = 0;          // Which element is being selected
 const int lcdVerticalScrollMax = 1720;   // Vertical scroll amount of time on screen. ms.
 
 // Display LCD data
-char* lcdLine1 = " ";       // Line 1 of the LCD.
-char* lcdLine2 = " ";       // Line 2 of the LCD.
+char* lcdLine1 = " ";       // Line 1 of the LCD. Set variable to write.
+char* lcdLine2 = " ";       // Line 2 of the LCD. Set variable to write.
 String msg_operation = "";  // For intermediate conversions of Strings to c_str (char*) and/or user input.
-
 const char * msg_scrollInstructions = "[*/#]: Scroll";
 const char * msg_obfuscated = "################";
-
+const char * msg_menu162[] = {"[0]: Micrometres", "[1]: Nanometres"};
+const int msg_menu162_size = 2;
+const char * msg_menu17[] = {"[*]: Left", "[#]: Right", "[0]: Return", "[1]: Delete"};
+const int msg_menu17_size = 4;
 const char * msg_menu16[] = {"[#]: Proceed", "[*]: Return"};
 const int msg_menu16_size = 2;
-
 const char * msg_menu15[] = {"[0]: Steps", "[1]: Delay", "[*/#]: Return"};
 const int msg_menu15_size = 3;
-
 const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[*]: Return"};
 const int msg_menu2_size = 3;
-
-const char * msg_menu1[] = {"[0]: Settings", "[1]: Callibrate", "[3]: Reset Cal.", "[5]: View steps", "[4]: Move X-", "[6]: Move X+", "[8]: Move Y-", "[2]: Move Y+", "[#/*]: Scroll"};
+const char * msg_menu1[] = {"[0]: Settings", "[1]: Callibrate", "[3]: Edit Cal.", "[5]: View steps", "[4]: Move X-", "[6]: Move X+", "[8]: Move Y-", "[2]: Move Y+", "[#/*]: Scroll"};
 const int msg_menu1_size = 9;
+const char * msg_menu02[] = {"[0]: Proceed", msg_scrollInstructions};
+const int msg_menu02_size = 2;
 
-// Motor Wiring Variables
-const int dirPinX = 8;
-const int stepPinX = 9;
-const int enablePinX = 10;
-const int dirPinY = 11;
-const int stepPinY = 12;
-const int enablePinY = 13;
+// Callibration point scroller
+int calPointMenuPivot = 0
 
-// Debug Motor Variables
-int debugMotorSteps = 1024;
-long debugMotorDelay = 900000;
+/* /////////////////////////////////////////////
+       !!! AFM VARIABLES - NOT IN EEPROM !!!
+*/ /////////////////////////////////////////////
 
-// Callibration
-int callibrationStep = 0; // Internal variable that tracks where in the procedure the user is.
-                          // 0: add point; 1: insert displacement.
-
-int xCallibrationStepsStart[] = {};
-int yCallibrationStepsStart[] = {};
-int callibrationStepsStartSize = 0;
-
-int xCallibrationStepsStop[] = {};
-int yCallibrationStepsStop[] = {};
-int callibrationStepsStopSize = 0;
-
-float xCallibrationMeasures[] = {}; // micrometres
-float yCallibrationMeasures[] = {}; // micrometres
-int callibrationMeasuresSize = 0;
-
-/* ///////////////////////////
-       ! AFM VARIABLES !
-*/ ///////////////////////////
-
-// Manual movement variables
-long manual_delay = 900000;
-long manual_steps = 128;
+// EEPROM verification ID. Change for hard reset.
+const byte eepromID = 139;
 
 // Step counters
 long steps_X = 0;
 long steps_Y = 0;
 
-// Conversion variables
-float xStepsToReal = 0;
-float yStepsToReal = 0;
-bool callibrated = false;
+// Callibration
+const int callibrationPointsMax = 10;
+int callibrationStep = 0; // Internal variable that tracks where in the callibration procedure the user is.
+                          // 0: add point; 1: insert displacement.
+int xCallibrationStepsStart = 0;
+int yCallibrationStepsStart= 0;
+int xCallibrationStepsStop = 0;
+int yCallibrationStepsStop = 0;
+float xCallibrationMeasure = 0; // micrometres
+float yCallibrationMeasure = 0; // micrometres
+
+/* ///////////////////////////////////////
+       !!! AFM VARIABLES - EEPROM !!!
+*/ ///////////////////////////////////////
+
+// Manual movement variables
+long manual_delay;
+long manual_steps;
+
+// Callibration
+float xStepsToReal[callibrationPointsMax];
+float yStepsToReal[callibrationPointsMax];
+int stepsToRealPivot;
 
 // Acquisition variables
-float Hz = 1;
-int lines = 512;
-char* setpoint = "0.2";
+float Hz;
+int lines;
+char* setpoint;
 
-/* ///////////////////
-        ROUTINES
-*/ ///////////////////
+/* ////////////////////////////
+       EEPROM AND RESETTING
+*/ ////////////////////////////
+// NOTE: VARIABLES MUST BE IN THE SAME ORDER IN ALL THE FUNCTIONS!!!
+
+// Set all AFM settings to default.
+void resetSettings(){
+  manual_delay = 900000;
+  manual_steps = 128;
+  stepsToRealPivot = 0;
+  for (int i = 0; i < callibrationPointsMax; i++) xStepsToReal[i] = 0;
+  for (int i = 0; i < callibrationPointsMax; i++) yStepsToReal[i] = 0;
+  Hz = 1;
+  lines = 512;
+  setpoint = "0.2";
+}
+
+// Load data from the EEPROM and report on success.
+int loadFromEEPROM(){
+  // Verify if eepromID is the same
+  byte eepromIDverify = 0;
+  EEPROM.get(0, eepromIDverify);
+  if (eepromIDverify == eepromID) {
+    // ID was correct. Load all data
+    int eepromPivot = 1;
+    EEPROM.get(eepromPivot, manual_delay); eepromPivot += sizeof(manual_delay);
+    EEPROM.get(eepromPivot, manual_steps); eepromPivot += sizeof(manual_steps);
+    EEPROM.get(eepromPivot, stepsToRealPivot); eepromPivot += sizeof(stepsToRealPivot);
+    EEPROM.get(eepromPivot, xStepsToReal); eepromPivot += sizeof(xStepsToReal);
+    EEPROM.get(eepromPivot, yStepsToReal); eepromPivot += sizeof(yStepsToReal);
+    EEPROM.get(eepromPivot, Hz); eepromPivot += sizeof(Hz);
+    EEPROM.get(eepromPivot, lines); eepromPivot += sizeof(lines);
+    EEPROM.get(eepromPivot, setpoint); eepromPivot += sizeof(setpoint);
+    return 0;
+  }
+  return -99;
+}
+
+// Save data to EEPROM.
+void saveToEEPROM(){
+  int eepromPivot = 0;
+  EEPROM.put(eepromPivot, eepromID); eepromPivot += sizeof(eepromID);
+  EEPROM.put(eepromPivot, manual_delay); eepromPivot += sizeof(manual_delay);
+  EEPROM.put(eepromPivot, manual_steps); eepromPivot += sizeof(manual_steps);
+  EEPROM.put(eepromPivot, stepsToRealPivot); eepromPivot += sizeof(stepsToRealPivot);
+  EEPROM.put(eepromPivot, xStepsToReal); eepromPivot += sizeof(xStepsToReal);
+  EEPROM.put(eepromPivot, yStepsToReal); eepromPivot += sizeof(yStepsToReal);
+  EEPROM.put(eepromPivot, Hz); eepromPivot += sizeof(Hz);
+  EEPROM.put(eepromPivot, lines); eepromPivot += sizeof(lines);
+  EEPROM.put(eepromPivot, setpoint); eepromPivot += sizeof(setpoint);
+}
+
+/* /////////////////////////////////
+        INSTRUMENTATION ROUTINES
+*/ /////////////////////////////////
 
 void lcdPrint(int row, char* line, byte* pivot, int* clock); // Declaration so that the compiler doesn't scream at me.
 void updateDisplay();
@@ -327,10 +386,74 @@ void updateDisplay(){
 void menuLoop(){
   switch (menu) {
 
-    case 161:
-      lcdLine1 = "INSERT X Displacement ...";
-      lcdLine2 = "WIP";
+    case 166:
+      lcdLine1 = "ERROR - The point could not be added, you have exceeded the maximum ammount of callibration points!";
+      lcdLine2 = "Press any key";
       if (key) switchMenu(1);
+      break;
+
+    case 165:
+      lcdLine1 = "COMPLETE - Saving point ...";
+      lcdLine2 = "Press any key";
+
+      if (key) {
+        if (stepsToRealPivot < callibrationPointsMax) {
+
+          if (xCallibrationStepsStop - xCallibrationStepsStart != 0){
+            xStepsToReal[stepsToRealPivot] = float(xCallibrationMeasure)/float(xCallibrationStepsStop - xCallibrationStepsStart);
+          } else xStepsToReal[stepsToRealPivot] = 0;
+
+          if (yCallibrationStepsStop - yCallibrationStepsStart != 0){
+            yStepsToReal[stepsToRealPivot] = float(yCallibrationMeasure)/float(yCallibrationStepsStop - yCallibrationStepsStart);
+          } else xStepsToReal[stepsToRealPivot] = 0;
+          
+
+          stepsToRealPivot += 1;
+          saveToEEPROM();
+
+          switchMenu(1);
+
+        } else {
+          switchMenu(166);
+        }
+        
+      }
+      break;
+
+    case 164:
+      lcdLine1 = "Units?";
+      if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu162[lcdVerticalScrollPivot];
+      if (key == '0') { yCallibrationMeasure = float(msg_operation.toInt()); switchMenu(165); }
+      if (key == '1') { yCallibrationMeasure = 0.001*float(msg_operation.toInt()); switchMenu(165); }
+      break;
+
+    case 163:
+      lcdLine1 = "INSERT Y Displacement. Insert 0 for no measure. Units chosen afterwards (micrometres or nanometres).";
+      if (key == '#') {
+        switchMenu(164);
+      } else if (key == '*' && msg_operation.length() > 0) {
+        msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
+      } else if (key && key != '*' && key != '#') msg_operation += key;
+      lcdLine2 = msg_operation.c_str();
+      break;
+
+    case 162:
+      lcdLine1 = "Units?";
+      if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu162[lcdVerticalScrollPivot];
+      if (key == '0') { xCallibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
+      if (key == '1') { xCallibrationMeasure = 0.001*float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
+      break;
+
+    case 161:
+      lcdLine1 = "INSERT X Displacement. Insert 0 for no measure. Units chosen afterwards (micrometres or nanometres).";
+      if (key == '#') {
+        switchMenu(162);
+      } else if (key == '*' && msg_operation.length() > 0) {
+        msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
+      } else if (key && key != '*' && key != '#') msg_operation += key;
+      lcdLine2 = msg_operation.c_str();
       break;
 
     case 160:
@@ -344,7 +467,7 @@ void menuLoop(){
     case 153:
       lcdLine1 = "Save? [#]";
       lcdLine2 = "Discard? [*]";
-      if (key == '#') { manual_delay = msg_operation.toInt(); switchMenu(15); }
+      if (key == '#') { manual_delay = msg_operation.toInt(); saveToEEPROM(); switchMenu(15); }
       if (key == '*') { switchMenu(15); }
       break;
 
@@ -363,7 +486,7 @@ void menuLoop(){
     case 151:
       lcdLine1 = "Save? [#]";
       lcdLine2 = "Discard? [*]";
-      if (key == '#') { manual_steps = msg_operation.toInt(); switchMenu(15); }
+      if (key == '#') { manual_steps = msg_operation.toInt(); saveToEEPROM(); switchMenu(15); }
       if (key == '*') { switchMenu(15); }
       break;
 
@@ -378,20 +501,62 @@ void menuLoop(){
       lcdLine2 = msg_operation.c_str();
       break;
 
-    // Manual movement of stepper motors - Settings.
+    // MANAGE CALLIBRATION POINTS
+    case 17:
+      lcdLine1 = "";
+      if (lcdVerticalScrollPivot >= msg_menu17_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu17[lcdVerticalScrollPivot];
+      if (key == '0') { switchMenu(1); calPointMenuPivot = 0; }
+
+      if (stepsToRealPivot > 0){
+
+        if (key == '*') {
+          calPointMenuPivot -= 1;
+          if (calPointMenuPivot < 0) calPointMenuPivot = 0;
+        }
+        if (key == '#') {
+          calPointMenuPivot += 1;
+          if (calPointMenuPivot >= stepsToRealPivot) calPointMenuPivot = stepsToRealPivot - 1;
+        }
+
+        msg_operation = "X:"+String(xStepsToReal[calPointMenuPivot], 10)+" Y:"+String(yStepsToReal[calPointMenuPivot], 10);
+        lcdLine1 = msg_operation.c_str();
+
+        if (key == '1') {
+          for (int j = calPointMenuPivot; j < calPointMenuPivot; j++) {
+            xStepsToReal[j] = xStepsToReal[j + 1];
+            yStepsToReal[j] = yStepsToReal[j + 1];
+          }
+          stepsToRealPivot -= 1;
+          calPointMenuPivot = 0;
+          saveToEEPROM();
+        }
+
+      } else {
+        lcdLine1 = "No points.";
+      }
+
+
+      
+      break;
+
+    // CALLIBRATION
     case 16:
       lcdLine1 = "CALLIBRATE";
       if (lcdVerticalScrollPivot >= msg_menu16_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu16[lcdVerticalScrollPivot];
       if (key == '#') {
         if (callibrationStep == 0){
-          switchMenu(160);
-          // Add start point
+          xCallibrationStepsStart = steps_X;
+          yCallibrationStepsStart = steps_Y;
           callibrationStep = 1;
+          switchMenu(160);
         }else{
-          switchMenu(161);
-          // Add end point
+          msg_operation = "";
+          xCallibrationStepsStop = steps_X;
+          yCallibrationStepsStop = steps_Y;
           callibrationStep = 0;
+          switchMenu(161);
         }
       }
       if (key == '*') switchMenu(1);  // Return
@@ -467,7 +632,7 @@ void menuLoop(){
 
     // Manual movement of stepper motors.
     case 1:
-      lcdLine1 = "MANUAL/CALLIBRATE - Manually control the stepper motors. +Cal.Point adds a callibration point, and Reset cal. resets the callibration entirely.";
+      lcdLine1 = "MANUAL/CALLIBRATE - Manually control the stepper motors. [Callibration] adds callibration points, and [Edit Cal.] allows you to remove added callibration points.";
       if (lcdVerticalScrollPivot >= msg_menu1_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu1[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
@@ -479,7 +644,7 @@ void menuLoop(){
       if (key == '2') switchMenu(14); // Y+ Move (done)
       if (key == '0') switchMenu(15); // Movement Settings (done)
       if (key == '1') switchMenu(16); // Callibrate
-      if (key == '3') switchMenu(17); // Reset callibration
+      if (key == '3') {switchMenu(17); calPointMenuPivot = 0;} // Manage Callibration points
       break;
 
     // Welcome splash screen
@@ -498,12 +663,32 @@ void menuLoop(){
       if (key == '#') switchMenu(menu+1);
       break;
     
-    // Sensor data - debugging
+    // Reset
     case -2:
+      lcdLine1 = "RESET SETTINGS - Reset all manual movement and acquisition settings.";
+      if (lcdVerticalScrollPivot >= msg_menu02_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu02[lcdVerticalScrollPivot];
+      if (key == '*') switchMenu(menu-1);
+      if (key == '#') switchMenu(menu+1);
+      if (key == '0') {
+        resetSettings();
+        switchMenu(-99);
+      }
+      break;
+    
+    // Sensor data - debugging
+    case -3:
       lcdLine1 = "SENSOR DATA - M: Microphone; X: Rotary Encoder X; Y: Rotary Encoder Y; [#] to Return.";
       msg_operation = "M"+String(micAnalog)+" X"+String(rotaryAnalogX)+" Y"+String(rotaryAnalogY);
       lcdLine2 = msg_operation.c_str();
       if (key == '#') switchMenu(menu+1);
+      break;
+
+    // Factory reset
+    case -99:
+      lcdLine1 = "SETTINGS RESET - Either you reset your settings, or no data/corrupted data was found on the EEPROM.";
+      lcdLine2 = "Press any key";
+      if (key) switchMenu(0);
       break;
 
     // Safeguard for undefined behaviour
@@ -535,6 +720,10 @@ void setup(){
   pinMode(enablePinY, OUTPUT);
   digitalWrite(enablePinX, HIGH);
   digitalWrite(enablePinY, HIGH);
+  // EEPROM and loading settings
+  resetSettings();
+  menu = loadFromEEPROM();
+  saveToEEPROM();
 }
 
 /* ////////////////
