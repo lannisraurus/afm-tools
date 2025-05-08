@@ -78,24 +78,24 @@ int lcdVerticalScrollPivot = 0;          // Which element is being selected
 const int lcdVerticalScrollMax = 1720;   // Vertical scroll amount of time on screen. ms.
 
 // Display LCD data
-char* lcdLine1 = " ";       // Line 1 of the LCD
-char* lcdLine2 = " ";       // Line 2 of the LCD
-String msg_operation = "";  // For intermediate conversions of Strings to c_str (char*)
+char* lcdLine1 = " ";       // Line 1 of the LCD.
+char* lcdLine2 = " ";       // Line 2 of the LCD.
+String msg_operation = "";  // For intermediate conversions of Strings to c_str (char*) and/or user input.
 
 const char * msg_scrollInstructions = "[*/#]: Scroll";
 const char * msg_obfuscated = "################";
 
-const char * msg_menu3[] = {"[0]: Settings", "[1]: Acquire", "[*]: Return"};
-const int msg_menu3_size = 3;
+const char * msg_menu16[] = {"[#]: Proceed", "[*]: Return"};
+const int msg_menu16_size = 2;
 
-const char * msg_menu2[] = {"[0]: Callibrate", "[#/*]: Scroll"};
-const int msg_menu2_size = 2;
+const char * msg_menu15[] = {"[0]: Steps", "[1]: Delay", "[*/#]: Return"};
+const int msg_menu15_size = 3;
 
-const char * msg_menu1[] = {"[0]: Settings", "[5]: View steps", "[4]: Move X-", "[6]: Move X+", "[8]: Move Y-", "[2]: Move Y+", "[#/*]: Scroll"};
-const int msg_menu1_size = 7;
+const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[*]: Return"};
+const int msg_menu2_size = 3;
 
-const char * msg_menu02[] = {"[0]: Motor X", "[1]: Motor Y", "[#/*]: Scroll"};
-const int msg_menu02_size = 3;
+const char * msg_menu1[] = {"[0]: Settings", "[1]: Callibrate", "[3]: Reset Cal.", "[5]: View steps", "[4]: Move X-", "[6]: Move X+", "[8]: Move Y-", "[2]: Move Y+", "[#/*]: Scroll"};
+const int msg_menu1_size = 9;
 
 // Motor Wiring Variables
 const int dirPinX = 8;
@@ -109,17 +109,38 @@ const int enablePinY = 13;
 int debugMotorSteps = 1024;
 long debugMotorDelay = 900000;
 
+// Callibration
+int callibrationStep = 0; // Internal variable that tracks where in the procedure the user is.
+                          // 0: add point; 1: insert displacement.
+
+int xCallibrationStepsStart[] = {};
+int yCallibrationStepsStart[] = {};
+int callibrationStepsStartSize = 0;
+
+int xCallibrationStepsStop[] = {};
+int yCallibrationStepsStop[] = {};
+int callibrationStepsStopSize = 0;
+
+float xCallibrationMeasures[] = {}; // micrometres
+float yCallibrationMeasures[] = {}; // micrometres
+int callibrationMeasuresSize = 0;
+
 /* ///////////////////////////
        ! AFM VARIABLES !
 */ ///////////////////////////
 
 // Manual movement variables
 long manual_delay = 900000;
-int manual_steps = 128;
+long manual_steps = 128;
 
 // Step counters
-int steps_X = 0;
-int steps_Y = 0;
+long steps_X = 0;
+long steps_Y = 0;
+
+// Conversion variables
+float xStepsToReal = 0;
+float yStepsToReal = 0;
+bool callibrated = false;
 
 // Acquisition variables
 float Hz = 1;
@@ -134,7 +155,7 @@ void lcdPrint(int row, char* line, byte* pivot, int* clock); // Declaration so t
 void updateDisplay();
 
 // Move one of the motors, given their pins. NOTE: ADD UPDATE TO POS_X AND POS_Y!!!
-void moveMotor(int stepPin, int dirPin, int enablePin, int steps, long stepDelay, int direction, int* stepCounter){
+void moveMotor(int stepPin, int dirPin, int enablePin, long steps, long stepDelay, int direction, long* stepCounter){
   digitalWrite(enablePin, LOW);
   digitalWrite(dirPin, direction);
   for (int x = 0; x < steps; x++) {
@@ -144,7 +165,8 @@ void moveMotor(int stepPin, int dirPin, int enablePin, int steps, long stepDelay
     delayMicroseconds(stepDelay/2);
   }
   digitalWrite(enablePin, HIGH);
-  *stepCounter += steps;
+  if (direction) *stepCounter += steps; else *stepCounter -= steps;
+  
 }
 
 // Acquire an AFM image.
@@ -227,8 +249,6 @@ void AFMing(char setpoint_char, int lines, float Hz){
     return 0;  
 }
 
-// AFM Acquire image and wait for beep
-
 /* ///////////////////////
         UI FUNCTIONS
 */ ///////////////////////
@@ -307,43 +327,159 @@ void updateDisplay(){
 void menuLoop(){
   switch (menu) {
 
+    case 161:
+      lcdLine1 = "INSERT X Displacement ...";
+      lcdLine2 = "WIP";
+      if (key) switchMenu(1);
+      break;
+
+    case 160:
+      lcdLine1 = "ADD CALLIBRATION POINT - Move your AFM using manual movement by a known X and Y ammount, and select the callibrate option again.";
+      lcdLine2 = "Press any key";
+      if (key) switchMenu(1);
+      break;
+
+    
+    // Manual movement of stepper motors - Settings delay - save or discard delay.
+    case 153:
+      lcdLine1 = "Save? [#]";
+      lcdLine2 = "Discard? [*]";
+      if (key == '#') { manual_delay = msg_operation.toInt(); switchMenu(15); }
+      if (key == '*') { switchMenu(15); }
+      break;
+
+    // Manual movement of stepper motors - Settings delay.
+    case 152:
+      lcdLine1 = "INSERT DELAY (MICROSECONDS) ([#] to exit, [*] to erase, numbers to write).";
+      if (key == '#') {
+        switchMenu(153);
+      } else if (key == '*' && msg_operation.length() > 0) {
+        msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
+      } else if (key && key != '*' && key != '#') msg_operation += key;
+      lcdLine2 = msg_operation.c_str();
+      break;
+
+    // Manual movement of stepper motors - Settings steps - save or discard steps.
+    case 151:
+      lcdLine1 = "Save? [#]";
+      lcdLine2 = "Discard? [*]";
+      if (key == '#') { manual_steps = msg_operation.toInt(); switchMenu(15); }
+      if (key == '*') { switchMenu(15); }
+      break;
+
+    // Manual movement of stepper motors - Settings steps.
+    case 150:
+      lcdLine1 = "INSERT STEPS ([#] to exit, [*] to erase, numbers to write).";
+      if (key == '#') {
+        switchMenu(151);
+      } else if (key == '*' && msg_operation.length() > 0) {
+        msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
+      } else if (key && key != '*' && key != '#') msg_operation += key;
+      lcdLine2 = msg_operation.c_str();
+      break;
+
+    // Manual movement of stepper motors - Settings.
+    case 16:
+      lcdLine1 = "CALLIBRATE";
+      if (lcdVerticalScrollPivot >= msg_menu16_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu16[lcdVerticalScrollPivot];
+      if (key == '#') {
+        if (callibrationStep == 0){
+          switchMenu(160);
+          // Add start point
+          callibrationStep = 1;
+        }else{
+          switchMenu(161);
+          // Add end point
+          callibrationStep = 0;
+        }
+      }
+      if (key == '*') switchMenu(1);  // Return
+      break;
+
+    // Manual movement of stepper motors - Settings.
+    case 15:
+      lcdLine1 = "MANUAL SETTINGS";
+      if (lcdVerticalScrollPivot >= msg_menu15_size) lcdVerticalScrollPivot = 0;
+      lcdLine2 = msg_menu15[lcdVerticalScrollPivot];
+      if (key == '0') {msg_operation = String(manual_steps); switchMenu(150);}    // Steps
+      if (key == '1') {msg_operation = String(manual_delay); switchMenu(152);}    // Delay
+      if (key == '#' || key == '*') switchMenu(1);  // Return
+      break;
+
+    // Manual Movement (Y+)
+    case 14:
+      lcdLine1 = "Powering Y+ ...";
+      msg_operation = String(manual_steps)+" "+String(manual_delay);
+      lcdLine2 = msg_operation.c_str();
+      updateDisplay();
+      moveMotor(stepPinY, dirPinY, enablePinY, manual_steps, manual_delay, 1, &steps_Y);
+      switchMenu(1);
+      break;
+
+    // Manual Movement (Y-)
+    case 13:
+      lcdLine1 = "Powering Y- ...";
+      msg_operation = String(manual_steps)+" "+String(manual_delay);
+      lcdLine2 = msg_operation.c_str();
+      updateDisplay();
+      moveMotor(stepPinY, dirPinY, enablePinY, manual_steps, manual_delay, 0, &steps_Y);
+      switchMenu(1);
+      break;
+
+    // Manual Movement (X+)
+    case 12:
+      lcdLine1 = "Powering X+ ...";
+      msg_operation = String(manual_steps)+" "+String(manual_delay);
+      lcdLine2 = msg_operation.c_str();
+      updateDisplay();
+      moveMotor(stepPinX, dirPinX, enablePinX, manual_steps, manual_delay, 1, &steps_X);
+      switchMenu(1);
+      break;
+
+    // Manual Movement (X-)
+    case 11:
+      lcdLine1 = "Powering X- ...";
+      msg_operation = String(manual_steps)+" "+String(manual_delay);
+      lcdLine2 = msg_operation.c_str();
+      updateDisplay();
+      moveMotor(stepPinX, dirPinX, enablePinX, manual_steps, manual_delay, 0, &steps_X);
+      switchMenu(1);
+      break;
+
     // Manual Movement - See steps.
     case 10:
       msg_operation = "X="+String(steps_X)+" Y="+String(steps_Y);
       lcdLine1 = msg_operation.c_str();
       lcdLine2 = "Any key - Return";
-      if (key) switchMenu(menu/10);
+      if (key) switchMenu(1);
       break;
     
     // Acquisition routines for the AFM.
-    case 3:
-      lcdLine1 = "ACQUISITION - Acquire AFM images.";
-      if (lcdVerticalScrollPivot >= msg_menu3_size) lcdVerticalScrollPivot = 0;
-      lcdLine2 = msg_menu3[lcdVerticalScrollPivot];
-      if (key == '*') switchMenu(menu-1);
-      break;
-
-    // Callibration routines for the AFM.
     case 2:
-      lcdLine1 = "CALLIBRATE - Callibrate AFM.";
+      lcdLine1 = "ACQUISITION - Acquire AFM images.";
       if (lcdVerticalScrollPivot >= msg_menu2_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu2[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
-      if (key == '#') switchMenu(menu+1);
+      if (key == '0') switchMenu(20);  // Acquisition Settings
+      if (key == '1') switchMenu(21);  // Begin Acquisition
       break;
 
     // Manual movement of stepper motors.
     case 1:
-      lcdLine1 = "MANUAL - Manually control the stepper motors.";
+      lcdLine1 = "MANUAL/CALLIBRATE - Manually control the stepper motors. +Cal.Point adds a callibration point, and Reset cal. resets the callibration entirely.";
       if (lcdVerticalScrollPivot >= msg_menu1_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu1[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
       if (key == '#') switchMenu(menu+1);
-      if (key == '5') switchMenu(menu*10);   // View Steps
-      if (key == '4') switchMenu(menu*10+1); // X- Move
-      if (key == '6') switchMenu(menu*10+2); // X+ Move
-      if (key == '8') switchMenu(menu*10+3); // Y- Move
-      if (key == '2') switchMenu(menu*10+4); // Y+ Move
+      if (key == '5') switchMenu(10); // View Steps (done)
+      if (key == '4') switchMenu(11); // X- Move (done)
+      if (key == '6') switchMenu(12); // X+ Move (done)
+      if (key == '8') switchMenu(13); // Y- Move (done)
+      if (key == '2') switchMenu(14); // Y+ Move (done)
+      if (key == '0') switchMenu(15); // Movement Settings (done)
+      if (key == '1') switchMenu(16); // Callibrate
+      if (key == '3') switchMenu(17); // Reset callibration
       break;
 
     // Welcome splash screen
@@ -362,41 +498,12 @@ void menuLoop(){
       if (key == '#') switchMenu(menu+1);
       break;
     
-    // Motor debugging - just to check wiring
-    case -2:
-      lcdLine1 = "MOTOR DEBUG - Activate both motors to check if the wiring is correct. Steps counring will not be updated!";
-      if (lcdVerticalScrollPivot >= msg_menu02_size) lcdVerticalScrollPivot = 0;
-      lcdLine2 = msg_menu02[lcdVerticalScrollPivot];
-      if (key == '#') switchMenu(menu+1);
-      if (key == '*') switchMenu(menu-1);
-      if (key == '0') switchMenu(menu*10);
-      if (key == '1') switchMenu(menu*10-1);
-      break;
-    
     // Sensor data - debugging
-    case -3:
+    case -2:
       lcdLine1 = "SENSOR DATA - M: Microphone; X: Rotary Encoder X; Y: Rotary Encoder Y; [#] to Return.";
       msg_operation = "M"+String(micAnalog)+" X"+String(rotaryAnalogX)+" Y"+String(rotaryAnalogY);
       lcdLine2 = msg_operation.c_str();
       if (key == '#') switchMenu(menu+1);
-      break;
-    
-    // Motor debugging - Rotate X
-    case -20:
-      lcdLine1 = "Powering X Motor";
-      lcdLine2 = "";
-      updateDisplay();
-      moveMotor(stepPinX, dirPinX, enablePinX, debugMotorSteps, debugMotorDelay, 0, &steps_X);
-      switchMenu(menu/10);
-      break;
-    
-    // Motor debugging - Rotate Y
-    case -21:
-      lcdLine1 = "Powering Y Motor";
-      lcdLine2 = "";
-      updateDisplay();
-      moveMotor(stepPinY, dirPinY, enablePinY, debugMotorSteps, debugMotorDelay, 0, &steps_Y);
-      switchMenu(menu/10);
       break;
 
     // Safeguard for undefined behaviour
