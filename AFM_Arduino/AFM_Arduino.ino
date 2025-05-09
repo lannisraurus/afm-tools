@@ -16,6 +16,13 @@ WPI300 Keypad Manuals. AND AFM PAPER REFERENCE
 #include <Wire.h>       // For I2C.
 #include <EEPROM.h>     // For keep variables from shutdown.
 
+/* /////////////////////////
+        PRE-DECLARATIONS
+*/ /////////////////////////
+
+void lcdPrint(int, char*, byte*, int*);
+void updateDisplay();
+
 /* ////////////////////
         LCD SCREEN
 */ ////////////////////
@@ -94,7 +101,7 @@ const int lcdVerticalScrollMax = 1720;   // Vertical scroll amount of time on sc
 char* lcdLine1 = " ";       // Line 1 of the LCD. Set variable to write.
 char* lcdLine2 = " ";       // Line 2 of the LCD. Set variable to write.
 String msg_operation = "";  // For intermediate conversions of Strings to c_str (char*) and/or user input.
-const char * msg_menu162[] = {"[0]: Micrometres", "[1]: Nanometres"};
+const char * msg_menu162[] = {"[0]: \xB5m", "[1]: nm"};
 const byte msg_menu162_size = 2;
 const char * msg_menu17[] = {"[*]: Left", "[#]: Right", "[0]: Return", "[1]: Delete"};
 const byte msg_menu17_size = 4;
@@ -120,32 +127,32 @@ byte calPointMenuPivot = 0;
 const byte eepromID = 139;
 
 // Step counters
-long steps_X = 0;
-long steps_Y = 0;
+long steps_X = 0; // steps
+long steps_Y = 0; // steps
 
 // Callibration
 const byte callibrationPointsMax = 6;
 byte callibrationStep = 0; // Internal variable that tracks where in the callibration procedure the user is.
                           // 0: add point; 1: insert displacement.
-long xCallibrationStepsStart = 0;
-long yCallibrationStepsStart= 0;
-long xCallibrationStepsStop = 0;
-long yCallibrationStepsStop = 0;
-float xCallibrationMeasure = 0; // micrometres
-float yCallibrationMeasure = 0; // micrometres
+long xCallibrationStepsStart = 0; // steps
+long yCallibrationStepsStart= 0;  // steps
+long xCallibrationStepsStop = 0;  // steps
+long yCallibrationStepsStop = 0;  // steps
+float xCallibrationMeasure = 0;   // nm
+float yCallibrationMeasure = 0;   // nm
 
 /* ///////////////////////////////////////
        !!! AFM VARIABLES - EEPROM !!!
 */ ///////////////////////////////////////
 
 // Manual movement variables
-long manual_delay;
-long manual_steps;
+long manual_delay;  // microseconds
+long manual_steps;  // steps
 
 // Callibration
-float xStepsToReal[callibrationPointsMax];
-float yStepsToReal[callibrationPointsMax];
-byte stepsToRealPivot;
+float xStepsToReal[callibrationPointsMax];  // nm/step
+float yStepsToReal[callibrationPointsMax];  // nm/step
+byte stepsToRealPivot;                      // How many points exist + 1
 
 // Acquisition variables
 float Hz;
@@ -208,9 +215,6 @@ void saveToEEPROM(){
         INSTRUMENTATION ROUTINES
 */ /////////////////////////////////
 
-void lcdPrint(int row, char* line, byte* pivot, int* clock); // Declaration so that the compiler doesn't scream at me.
-void updateDisplay();
-
 // Move one of the motors, given their pins. NOTE: ADD UPDATE TO POS_X AND POS_Y!!!
 void moveMotor(int stepPin, int dirPin, int enablePin, long steps, long stepDelay, int direction, long* stepCounter){
   digitalWrite(enablePin, LOW);
@@ -227,9 +231,9 @@ void moveMotor(int stepPin, int dirPin, int enablePin, long steps, long stepDela
 }
 
 // Acquire an AFM image.
-void AFMing(char setpoint_char, int lines, float Hz){
+void acquireAFMImage(char setpoint_char, int lines, float Hz){
     
-    // Autotune - CHANGE DELAYS, WHAT SHOULD THEY BE? HOW COUKD WE DETECT? SHOULD WE AUTOTUNE ALL THE TIME?
+    // Autotune - CHANGE DELAYS, WHAT SHOULD THEY BE? HOW COULD WE DETECT? SHOULD WE AUTOTUNE ALL THE TIME?
     lcdLine1 = "Autotuning...";
     lcdLine2 = " ";
     updateDisplay();
@@ -247,7 +251,7 @@ void AFMing(char setpoint_char, int lines, float Hz){
     // Engage
     Keyboard.press(KEY_LEFT_CTRL);Keyboard.press('e');delay(200);Keyboard.releaseAll();
     
-    // Wait for completion of engage. NOTE: WHAT SHOULD THE THRESHOLD BE?
+    // Wait for completion of engage. NOTE: WHAT SHOULD THE THRESHOLD BE???
     lcdLine1 = "Engaging...";
     lcdLine2 = " ";
     updateDisplay();
@@ -422,8 +426,8 @@ void menuLoop(){
       lcdLine1 = "Units?";
       if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu162[lcdVerticalScrollPivot];
-      if (key == '0') { yCallibrationMeasure = float(msg_operation.toInt()); switchMenu(165); }
-      if (key == '1') { yCallibrationMeasure = 0.001*float(msg_operation.toInt()); switchMenu(165); }
+      if (key == '0') { yCallibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(165); }
+      if (key == '1') { yCallibrationMeasure = float(msg_operation.toInt()); switchMenu(165); }
       break;
 
     case 163:
@@ -440,8 +444,8 @@ void menuLoop(){
       lcdLine1 = "Units?";
       if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu162[lcdVerticalScrollPivot];
-      if (key == '0') { xCallibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
-      if (key == '1') { xCallibrationMeasure = 0.001*float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
+      if (key == '0') { xCallibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
+      if (key == '1') { xCallibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
       break;
 
     case 161:
@@ -471,7 +475,7 @@ void menuLoop(){
 
     // Manual movement of stepper motors - Settings delay.
     case 152:
-      lcdLine1 = "INSERT DELAY (MICROSECONDS) ([#] to exit, [*] to erase, numbers to write).";
+      lcdLine1 = "INSERT DELAY (\xB5s) ([#] to exit, [*] to erase, numbers to write).";
       if (key == '#') {
         switchMenu(153);
       } else if (key == '*' && msg_operation.length() > 0) {
@@ -516,7 +520,7 @@ void menuLoop(){
           if (calPointMenuPivot >= stepsToRealPivot - 1) calPointMenuPivot = stepsToRealPivot - 1;
         }
 
-        msg_operation = "X:"+String(xStepsToReal[calPointMenuPivot], 10)+" Y:"+String(yStepsToReal[calPointMenuPivot], 10);
+        msg_operation = "X:"+String(xStepsToReal[calPointMenuPivot], 3)+"nm Y:"+String(yStepsToReal[calPointMenuPivot], 3)+"nm";
         lcdLine1 = msg_operation.c_str();
 
         if (key == '1') {
