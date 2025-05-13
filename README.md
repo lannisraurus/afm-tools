@@ -1,2 +1,2 @@
 # Introduction
-This project was developed by Joao Camacho [106224], 2025, under the supervision of Prof. Dr. Luis Viseu Melo, in the context of the PIC-I project. All the code and information regarding this project can be found at [github.com/lannisraurus/REPONAMEINSERTHERE].
+Work in progress! Project description and instructions will be available soon...
