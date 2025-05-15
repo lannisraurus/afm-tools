@@ -730,11 +730,67 @@ void menuLoop(){
       break;
     
     case 21:
-      for (int i = 0; i < cols; i++){
-        for(int j = 0; j < rows; j++){
-          
+      
+      // Calculate scaling factors
+      float xStepsToRealMean = 0;
+      float yStepsToRealMean = 0;
+      byte xStepsToRealN = 0;
+      byte yStepsToRealN = 0;
+      for (int factor = 0; factor < callibrationPointsMax; factor++){
+        if (xStepsToReal[factor] > 0){
+          xStepsToRealN += 1;
+          xStepsToRealMean += xStepsToReal[factor];
+        }
+        if (yStepsToReal[factor] > 0){
+          yStepsToRealN += 1;
+          yStepsToRealMean += yStepsToReal[factor];
         }
       }
+      xStepsToRealMean /= float(xStepsToRealN);
+      yStepsToRealMean /= float(yStepsToRealN);
+
+      // Message
+      lcdLine1 = "----STARTING----";
+      lcdLine2 = "--ACQUISITION---";
+      updateDisplay();
+      delay(2500);
+
+      // Move the steppers and acquire images
+      for (int i = 0; i < rows; i++){
+        for(int j = 0; j < cols; j++){
+          // Acquire image ij
+          lcdLine1 = "Acq. img.";
+          msg_operation = "i:"+String(i)+" j:"+String(j);
+          lcdLine2 = msg_operation.c_str();
+          updateDisplay();
+          delay(2000);
+          acquireAFMImage(setpoint, lines, Hz);
+          // Move motor along collumns
+          lcdLine1 = "Powering X+ ...";
+          lcdLine2 = " ";
+          updateDisplay();
+          moveMotor(stepPinX, dirPinX, enablePinX, long(round(float(imgStep)*xStepsToRealMean)), 900000, 1, &steps_X);
+        }
+        // Go back to the beginning of the row
+        lcdLine1 = "Powering X- ...";
+        lcdLine2 = " ";
+        updateDisplay();
+        moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 900000, 0, &steps_X);
+        // Go down one row
+        lcdLine1 = "Powering Y- ...";
+        lcdLine2 = " ";
+        updateDisplay();
+        moveMotor(stepPinY, dirPinY, enablePinY, long(round(float(imgStep)*yStepsToRealMean)), 900000, 0, &steps_Y);
+      }
+
+      // Homing
+      lcdLine1 = "FINISHED";
+      lcdLine2 = "Homing ...";
+      updateDisplay();
+      moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 900000, 0, &steps_X);
+      moveMotor(stepPinY, dirPinY, enablePinY, rows*long(round(float(imgStep)*yStepsToRealMean)), 900000, 1, &steps_Y);
+
+      // End routine
       switchMenu(2);
       break;
 
