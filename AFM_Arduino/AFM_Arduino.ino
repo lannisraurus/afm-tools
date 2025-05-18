@@ -124,7 +124,7 @@ byte calPointMenuPivot = 0;
 */ /////////////////////////////////////////////
 
 // EEPROM verification ID. Change for hard reset.
-const byte eepromID = 132;
+const byte eepromID = 67;
 
 // Step counters
 long steps_X = 0; // steps
@@ -147,6 +147,12 @@ const long timeAutotune = 20000;  // ms
 
 // AFM Mic Threshold
 const int micThreshold = 800; // out of 1024, sensor units
+
+// AFM Conversion variables
+float xStepsToRealMean = 0;
+float yStepsToRealMean = 0;
+byte xStepsToRealN = 0;
+byte yStepsToRealN = 0;
 
 /* ///////////////////////////////////////
        !!! AFM VARIABLES - EEPROM !!!
@@ -176,7 +182,7 @@ int imgStep;    // How many nanometres to displace between each image.
 
 // Set all AFM settings to default.
 void resetSettings(){
-  manual_delay = 900000;
+  manual_delay = 1500000;
   manual_steps = 128;
   stepsToRealPivot = 0;
   for (int i = 0; i < callibrationPointsMax; i++) xStepsToReal[i] = 0;
@@ -729,13 +735,14 @@ void menuLoop(){
       if (key) switchMenu(1);
       break;
     
+    
     case 21:
-      
+      /*
       // Calculate scaling factors
-      float xStepsToRealMean = 0;
-      float yStepsToRealMean = 0;
-      byte xStepsToRealN = 0;
-      byte yStepsToRealN = 0;
+      xStepsToRealMean = 0;
+      yStepsToRealMean = 0;
+      xStepsToRealN = 0;
+      yStepsToRealN = 0;
       for (int factor = 0; factor < callibrationPointsMax; factor++){
         if (xStepsToReal[factor] > 0){
           xStepsToRealN += 1;
@@ -792,7 +799,11 @@ void menuLoop(){
 
       // End routine
       switchMenu(2);
+      */
       break;
+      
+    
+    
 
     // Acquisition routines for the AFM.
     case 2:
