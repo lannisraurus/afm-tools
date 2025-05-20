@@ -1,8 +1,13 @@
 /*
-João Camacho, 2025
+João Camacho, 2025, PIC-I @ IST
 
 Code adapted from the WPSH203 LCD and
-WPI300 Keypad Manuals. AND AFM PAPER REFERENCE
+WPI300 Keypad Manuals. Stepper control and AFM Nanoscope code adapted from
+https://www.hardware-x.com/article/S2468-0672(23)00054-8/fulltext
+
+Depending on your Nanoscope version the keyboard shortcuts might be different, in which case
+it is recommended to alter the acquireAFMImage function. It is also important to check all the
+variables and make sure that they are well suited to your setup.
 
 */
 
@@ -10,15 +15,15 @@ WPI300 Keypad Manuals. AND AFM PAPER REFERENCE
         INCLUDES
 */ ///////////////////
 
+#include <Wire.h>       // For I2C.
 #include <LCD_I2C.h>    // I2C LCD.
 #include <Keypad.h>     // For taking in user input.
 #include "Keyboard.h"   // For sending commands to AFM computer.
-#include <Wire.h>       // For I2C.
-#include <EEPROM.h>     // For keep variables from shutdown.
+#include <EEPROM.h>     // Saving variables between shutdowns.
 
-/* /////////////////////////
+/* ///////////////////////////
         PRE-DECLARATIONS
-*/ /////////////////////////
+*/ ///////////////////////////
 
 void lcdPrint(int, char*, byte*, int*);
 void updateDisplay();
@@ -30,9 +35,9 @@ void updateDisplay();
 const byte lcdAddress = 0x27;   // LCD I2C Address - Change according to your module.
 LCD_I2C lcd(lcdAddress);        // Default address of most PCF8574 modules.
 
-/* ////////////////
-        KEYPAD
-*/ ////////////////
+/* ///////////////////////
+        KEYPAD PINS
+*/ ///////////////////////
 
 const byte ROWS = 4;
 const byte COLS = 3;
@@ -46,17 +51,17 @@ byte rowPins[ROWS] = {A5, 4, 5, 6}; // Row pins. Change accordingly.
 byte colPins[COLS] = {0, 1, A4};    // Collumn pins. Change accordingly.
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
-/* //////////////
-        PINS
-*/ //////////////
+/* ///////////////////////
+        SENSOR PINS
+*/ ///////////////////////
 
 // Analog Sensor Data
 int micAnalog = -1;     // Microphone reading (buzzer).
 int rotaryAnalogX = -1; // First Rotary Encoder X.
 int rotaryAnalogY = -1; // Second Rotary Encoder Y.
-const byte micPin = A0;        // Microphone data pin. Change accordingly.
-const byte rotaryXPin = A1;    // Rotary Encoder 1 pin. Change accordingly.
-const byte rotaryYPin = A2;    // Rotary Encoder 2 pin. Change accordingly.
+const byte micPin = A0;        // Microphone data pin.
+const byte rotaryXPin = A1;    // Rotary Encoder 1 pin.
+const byte rotaryYPin = A2;    // Rotary Encoder 2 pin.
 
 // Motor Wiring Variables
 const byte dirPinX = 8;
@@ -86,7 +91,7 @@ unsigned int endLoopTime = 0;      // Keeps track of the times in which the main
 unsigned int loopDt = 0;           // Difference between the two previous variables. ms.
 
 // Autoscrolling variables
-const byte lcdHorizontalScrollStep = 4;   // How many characters are skipped per autoscroll step.
+const byte lcdHorizontalScrollStep = 4;  // How many characters are skipped per autoscroll step.
 const int lcdHorizontalScrollMax = 750;  // Controlls how often the line display scrolls. ms.
 const int lcdHorizontalScrollMin = -1310;// Reset tolerance in beginning and end of scroll. ms.
 int lcdHorizontalScrollCounter1 = 0;     // Keeps track of how much time has passed since a scroll - Line 1. ms.
@@ -94,15 +99,16 @@ int lcdHorizontalScrollCounter2 = 0;     // Keeps track of how much time has pas
 byte lcdHorizontalScrollPivot1 = 0;      // Keeps track of where the scroll is currently - Line 1.
 byte lcdHorizontalScrollPivot2 = 0;      // Keeps track of where the scroll is currently - Line 2.
 int lcdVerticalScrollCounter = 0;        // Allows for vertical scrolling by line, as per menu command.
-byte lcdVerticalScrollPivot = 0;          // Which element is being selected
+byte lcdVerticalScrollPivot = 0;         // Which element is being selected
 const int lcdVerticalScrollMax = 1720;   // Vertical scroll amount of time on screen. ms.
 
 // Display LCD data
-char* lcdLine1 = " ";       // Line 1 of the LCD. Set variable to write.
-char* lcdLine2 = " ";       // Line 2 of the LCD. Set variable to write.
-String msg_operation = "";  // For intermediate conversions of Strings to c_str (char*) and/or user input.
-const char * msg_menu162[] = {"[0]: \xB5m", "[1]: nm"};
-const byte msg_menu162_size = 2;
+char* lcdLine1 = " ";        // Line 1 of the LCD. Set variable to write.
+char* lcdLine2 = " ";        // Line 2 of the LCD. Set variable to write.
+String msg_operation = "";   // For intermediate conversions of Strings to c_str (char*) and/or user input.
+String msg_operation2 = "";  // For intermediate conversions of Strings to c_str (char*) and/or user input.
+
+// Vertical scrolling arrays
 const char * msg_menu17[] = {"[*]: Left", "[#]: Right", "[0]: Return", "[1]: Delete"};
 const byte msg_menu17_size = 4;
 const char * msg_menu16[] = {"[#]: Proceed", "[*]: Return"};
@@ -116,15 +122,17 @@ const byte msg_menu1_size = 9;
 const char * msg_menu02[] = {"[0]: Proceed", "[#]: Return"};
 const byte msg_menu02_size = 2;
 
-// Callibration point scroller
-byte calPointMenuPivot = 0;
+// Callibration
+byte calPointMenuPivot = 0; // Callibration point see menu
+byte callibrationStep = 0;  // Internal variable that tracks where in the callibration procedure the user is.
+                            // 0: add point; 1: insert displacement.
 
 /* /////////////////////////////////////////////
        !!! AFM VARIABLES - NOT IN EEPROM !!!
 */ /////////////////////////////////////////////
 
-// EEPROM verification ID. Change for hard reset.
-const byte eepromID = 67;
+// EEPROM verification ID. Change for hard reset of all settings.
+const byte eepromID = 71;
 
 // Step counters
 long steps_X = 0; // steps
@@ -132,18 +140,18 @@ long steps_Y = 0; // steps
 
 // Callibration
 const byte callibrationPointsMax = 6;
-byte callibrationStep = 0; // Internal variable that tracks where in the callibration procedure the user is.
-                          // 0: add point; 1: insert displacement.
-long xCallibrationStepsStart = 0; // steps
-long yCallibrationStepsStart= 0;  // steps
-long xCallibrationStepsStop = 0;  // steps
-long yCallibrationStepsStop = 0;  // steps
-float xCallibrationMeasure = 0;   // nm
-float yCallibrationMeasure = 0;   // nm
+long xCallibrationStepsStart = 0;     // steps
+long yCallibrationStepsStart= 0;      // steps
+long xCallibrationStepsStop = 0;      // steps
+long yCallibrationStepsStop = 0;      // steps
+float xCallibrationMeasure = 0;       // nm
+float yCallibrationMeasure = 0;       // nm
 
-// AFM Keyboard pressing
-const long timeBetweenKeys = 250; // ms
-const long timeAutotune = 20000;  // ms
+// AFM Keyboard pressing / Displaying
+const long timeBetweenKeys = 250; // ms  time that a key is pressed for
+const long timeDisplay = 2000;    // ms  time for a display during acquisition routine
+const long timeOperation = 500;   // ms  time between generic keyboard operations
+const long timeEngage = 2000;     // ms  time to wait after engaging (menu disappearing)
 
 // AFM Mic Threshold
 const int micThreshold = 800; // out of 1024, sensor units
@@ -158,6 +166,8 @@ byte yStepsToRealN = 0;
        !!! AFM VARIABLES - EEPROM !!!
 */ ///////////////////////////////////////
 
+// ALL VARIABLES DEFINED HERE ARE SET IN resetSettings!
+
 // Manual movement variables
 long manual_delay;  // microseconds
 long manual_steps;  // steps
@@ -168,9 +178,8 @@ float yStepsToReal[callibrationPointsMax];  // nm/step
 byte stepsToRealPivot;                      // How many points exist + 1
 
 // Acquisition variables
-int Hz;       // Acquisition Frequency in MILLIHERTZ.
-int lines;      // Lines.
-char setpoint; // Amplitude setpoint character.
+int Hz;         // Acquisition Frequency in !!mHz!!
+int lines;      // Lines to acquire.
 byte rows;      // How many images to acquire in a row.
 byte cols;      // How many images to acquire in a collumn.
 int imgStep;    // How many nanometres to displace between each image.
@@ -178,18 +187,18 @@ int imgStep;    // How many nanometres to displace between each image.
 /* ////////////////////////////
        EEPROM AND RESETTING
 */ ////////////////////////////
+
 // NOTE: VARIABLES MUST BE IN THE SAME ORDER IN ALL THE FUNCTIONS!!!
 
 // Set all AFM settings to default.
 void resetSettings(){
-  manual_delay = 1500000;
+  manual_delay = 10;
   manual_steps = 128;
   stepsToRealPivot = 0;
   for (int i = 0; i < callibrationPointsMax; i++) xStepsToReal[i] = 0;
   for (int i = 0; i < callibrationPointsMax; i++) yStepsToReal[i] = 0;
-  Hz = 1;
-  lines = 512;
-  setpoint = '2';
+  Hz = 1000;
+  lines = 128;
   rows = 3;
   cols = 3;
   imgStep = 1000;
@@ -210,7 +219,6 @@ int loadFromEEPROM(){
     EEPROM.get(eepromPivot, yStepsToReal); eepromPivot += sizeof(yStepsToReal);
     EEPROM.get(eepromPivot, Hz); eepromPivot += sizeof(Hz);
     EEPROM.get(eepromPivot, lines); eepromPivot += sizeof(lines);
-    EEPROM.get(eepromPivot, setpoint); eepromPivot += sizeof(setpoint);
     EEPROM.get(eepromPivot, rows); eepromPivot += sizeof(rows);
     EEPROM.get(eepromPivot, cols); eepromPivot += sizeof(cols);
     EEPROM.get(eepromPivot, imgStep); eepromPivot += sizeof(imgStep);
@@ -230,7 +238,6 @@ void saveToEEPROM(){
   EEPROM.put(eepromPivot, yStepsToReal); eepromPivot += sizeof(yStepsToReal);
   EEPROM.put(eepromPivot, Hz); eepromPivot += sizeof(Hz);
   EEPROM.put(eepromPivot, lines); eepromPivot += sizeof(lines);
-  EEPROM.put(eepromPivot, setpoint); eepromPivot += sizeof(setpoint);
   EEPROM.put(eepromPivot, rows); eepromPivot += sizeof(rows);
   EEPROM.put(eepromPivot, cols); eepromPivot += sizeof(cols);
   EEPROM.put(eepromPivot, imgStep); eepromPivot += sizeof(imgStep);
@@ -241,14 +248,14 @@ void saveToEEPROM(){
 */ /////////////////////////////////
 
 // Move one of the motors, given their pins. NOTE: ADD UPDATE TO POS_X AND POS_Y!!!
-void moveMotor(int stepPin, int dirPin, int enablePin, long steps, long stepDelay, int direction, long* stepCounter){
+void moveMotor(byte stepPin, byte dirPin, byte enablePin, long steps, long stepDelay, boolean direction, long* stepCounter){
   digitalWrite(enablePin, LOW);
   digitalWrite(dirPin, direction);
   for (int x = 0; x < steps; x++) {
     digitalWrite(stepPin, HIGH);
-    delayMicroseconds(stepDelay/2);
+    delay(stepDelay/2);
     digitalWrite(stepPin, LOW);
-    delayMicroseconds(stepDelay/2);
+    delay(stepDelay/2);
   }
   digitalWrite(enablePin, HIGH);
   if (direction) *stepCounter += steps; else *stepCounter -= steps;
@@ -256,90 +263,82 @@ void moveMotor(int stepPin, int dirPin, int enablePin, long steps, long stepDela
 }
 
 // Acquire an AFM image.
-void acquireAFMImage(char setpoint_char, int lines, float Hz){
-    
-    // AUTOTUNE
-    lcdLine1 = "Autotuning...";
-    lcdLine2 = " ";
-    updateDisplay();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('v'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('w'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('c'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(2*timeBetweenKeys);
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('p'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('a'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('t'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(timeAutotune);
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('b'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(4*timeBetweenKeys);
-    
+void acquireAFMImage(int lines, int Hz){
+
     // ENGAGE
     lcdLine1 = "Engaging...";
     lcdLine2 = "Waiting for beep";
     updateDisplay();
-    Keyboard.press(KEY_LEFT_CTRL); Keyboard.press('e'); delay(timeBetweenKeys); Keyboard.releaseAll();
+    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
+    Keyboard.press('e'); delay(timeBetweenKeys); Keyboard.releaseAll();
     while( analogRead(micPin) < micThreshold ) {}
-    delay(6*timeBetweenKeys);
-    
-    // AMPLITUDE SETPOINT
-    lcdLine1 = "Setting...";
-    lcdLine2 = "Amp. Setpoint";
-    updateDisplay();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('p'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('f'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(2*timeBetweenKeys);
-    Keyboard.press(KEY_DOWN_ARROW); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(2*timeBetweenKeys);
-    Keyboard.press(KEY_DOWN_ARROW); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(2*timeBetweenKeys);
-    Keyboard.press(KEY_DOWN_ARROW); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(2*timeBetweenKeys);
-    Keyboard.press('0'); delay(timeBetweenKeys);
-    Keyboard.press('.'); delay(timeBetweenKeys);
-    Keyboard.press(setpoint_char); delay(timeBetweenKeys);
-    Keyboard.press(KEY_RETURN); delay(timeBetweenKeys); Keyboard.releaseAll();
-    delay(2*timeBetweenKeys);
+    delay(timeBetweenKeys);
 
-    // MAYBE SET OTHER VARIABLES (HZ AND LINES) ALSO ???
+    // Engage delay
+    delay(timeEngage);
+
+    // Close annoying pop-up windows in our case :)
+    Keyboard.press(KEY_ESC); delay(timeBetweenKeys); Keyboard.releaseAll();
+
+    // Standard delay
+    delay(timeOperation);
     
     // START FRAME DOWN
     lcdLine1 = "Setting...";
-    lcdLine2 = "Capturing";
+    lcdLine2 = "Frame Down";
     updateDisplay();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('f'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('d'); delay(timeBetweenKeys); Keyboard.releaseAll();    
-    
-    // REVERSE TO PREVENT DRIFT
-    delay(48*timeBetweenKeys);
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('f'); delay(timeBetweenKeys); Keyboard.releaseAll();
     Keyboard.press(KEY_LEFT_ALT); Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    
-    // BEGIN CAPTURING
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('c'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('w'); delay(timeBetweenKeys); Keyboard.releaseAll();
+    Keyboard.press('d'); delay(timeBetweenKeys); Keyboard.releaseAll();
+
+    // Standard delay
+    delay(timeOperation);
+
+    // REVERSE TO PREVENT DRIFT
+    /*lcdLine1 = "Setting...";
+    lcdLine2 = "Reversing";
+    updateDisplay();
+    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
+    Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
+
+    // Standard delay
+    delay(timeOperation);
+    */
+
+    // BEGIN CAPTURING AND WITHDRAW
+    lcdLine1 = "Setting...";
+    lcdLine2 = "Capture+Withdraw";
+    updateDisplay();
+    Keyboard.press(KEY_LEFT_ALT); Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
+    Keyboard.press('w'); delay(timeBetweenKeys); Keyboard.releaseAll();
+
+    // Engage delay
+    delay(timeOperation);
+
+    // Close annoying pop-up windows in our case :)
+    Keyboard.press(KEY_ESC); delay(timeBetweenKeys); Keyboard.releaseAll();
+
+    // Standard delay
+    delay(timeOperation);
     
     // TIME KEEPING VARIABLES
-    float acquisitionTime=((float) lines)*1000; 
-    acquisitionTime /= float(Hz);   // 512 lines/1 Hz = 512 s = 8min53s.
-    acquisitionTime += 20000;       // +20s for safety
-    unsigned long sec_timer = 0;
-    unsigned StartTime = millis();
-    unsigned secs = millis();
-    unsigned CurrentTime = millis();
+    float acquisitionTime = ((float) lines)*1000.*1000. / float(Hz); // *1000 mHz->Hz ; *1000 s->ms
+    acquisitionTime += 15000.;                                       // Safety threshold
+    unsigned long StartTime = millis();
+    unsigned long CurrentTime = millis();
+
+    // Total time
+    msg_operation2 = "Total="+String(long(round(acquisitionTime/1000.)))+"s";
+    lcdLine2 = msg_operation2.c_str();
 
     // Wait until image is done.
-    while((CurrentTime - StartTime) < ((unsigned long) acquisitionTime)){
-      secs=millis();
+    while((CurrentTime - StartTime) < ((unsigned long) round(acquisitionTime) )){
+
       CurrentTime = millis();
-      while((CurrentTime-secs) < 1000) {
-        CurrentTime=millis();
-      }
-      sec_timer=sec_timer+1;
       
-      msg_operation = "Time (s): "+ String((int)sec_timer);
+      msg_operation = "Time="+ String(round((CurrentTime - StartTime)/1000.))+"s";
       lcdLine1 = msg_operation.c_str();
-      lcdLine2 = " ";
-      updateDisplay();   
+      updateDisplay();
+
     }
     
     return 0;  
@@ -424,7 +423,7 @@ void menuLoop(){
   switch (menu) {
 
     case 205:
-      lcdLine1 = "INSERT IMAGE STEP IN NANOMETRES ([#] to proceed, [*] to erase, numbers to write).";
+      lcdLine1 = "Image Step (nm) ([#] to proceed, [*] to erase).";
       if (key == '#') {
         imgStep = msg_operation.toInt();
         saveToEEPROM();
@@ -436,8 +435,9 @@ void menuLoop(){
       lcdLine2 = msg_operation.c_str();
       break;
 
+    /*
     case 204:
-      lcdLine1 = "INSERT AMP. SETPOINT ([#] to proceed).";
+      lcdLine1 = "Amp. Setpoint ([#] to proceed).";
       if (key == '#') {
         saveToEEPROM();
         msg_operation = String(imgStep);
@@ -445,14 +445,15 @@ void menuLoop(){
       } else if (key && key != '*' && key != '#') {msg_operation = "0."+String(key); setpoint = key;}
       lcdLine2 = msg_operation.c_str();
       break;
+    */
 
     case 203:
-      lcdLine1 = "INSERT HZ ([#] to proceed, [*] to erase, numbers to write).";
+      lcdLine1 = "mHz ([#] to proceed, [*] to erase).";
       if (key == '#') {
         Hz = msg_operation.toInt();
         saveToEEPROM();
-        msg_operation = "0."+String(setpoint);
-        switchMenu(204);
+        msg_operation = String(imgStep);
+        switchMenu(205);
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
@@ -460,7 +461,7 @@ void menuLoop(){
       break;
 
     case 202:
-      lcdLine1 = "INSERT LINES ([#] to proceed, [*] to erase, numbers to write).";
+      lcdLine1 = "Lines ([#] to proceed, [*] to erase).";
       if (key == '#') {
         lines = msg_operation.toInt();
         saveToEEPROM();
@@ -473,7 +474,7 @@ void menuLoop(){
       break;
 
     case 201:
-      lcdLine1 = "INSERT COLS ([#] to proceed, [*] to erase, numbers to write).";
+      lcdLine1 = "Cols ([#] to proceed, [*] to erase).";
       if (key == '#') {
         cols = msg_operation.toInt();
         saveToEEPROM();
@@ -486,7 +487,7 @@ void menuLoop(){
       break;
 
     case 200:
-      lcdLine1 = "INSERT ROWS ([#] to proceed, [*] to erase, numbers to write).";
+      lcdLine1 = "Rows ([#] to proceed, [*] to erase).";
       if (key == '#') {
         rows = msg_operation.toInt();
         saveToEEPROM();
@@ -499,7 +500,7 @@ void menuLoop(){
       break;
 
     case 166:
-      lcdLine1 = "ERROR - Could not add point, max reached!";
+      lcdLine1 = "ERROR - max points reached!";
       lcdLine2 = "Press any key";
       if (key) switchMenu(1);
       break;
@@ -518,8 +519,7 @@ void menuLoop(){
           if (yCallibrationStepsStop - yCallibrationStepsStart != 0){
             yStepsToReal[stepsToRealPivot] = float(yCallibrationMeasure)/float(abs(yCallibrationStepsStop - yCallibrationStepsStart));
           } else yStepsToReal[stepsToRealPivot] = 0;
-          
-
+        
           stepsToRealPivot += 1;
           saveToEEPROM();
 
@@ -532,6 +532,7 @@ void menuLoop(){
       }
       break;
 
+    /*
     case 164:
       lcdLine1 = "Units?";
       if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
@@ -539,17 +540,19 @@ void menuLoop(){
       if (key == '0') { yCallibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(165); }
       if (key == '1') { yCallibrationMeasure = float(msg_operation.toInt()); switchMenu(165); }
       break;
+    */
 
     case 163:
-      lcdLine1 = "INSERT Y Displacement. 0 for no measure. Units chosen after.";
+      lcdLine1 = "Y Displacement (nm). 0 to ignore. [#] to proceed. [*] to erase.";
       if (key == '#') {
-        switchMenu(164);
+        yCallibrationMeasure = float(msg_operation.toInt()); switchMenu(165);
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
       lcdLine2 = msg_operation.c_str();
       break;
 
+    /*
     case 162:
       lcdLine1 = "Units?";
       if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
@@ -557,11 +560,12 @@ void menuLoop(){
       if (key == '0') { xCallibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
       if (key == '1') { xCallibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
       break;
+    */
 
     case 161:
-      lcdLine1 = "INSERT X Displacement. 0 for no measure. Units chosen after.";
+      lcdLine1 = "X Displacement (nm). 0 to ignore. [#] to proceed. [*] to erase.";
       if (key == '#') {
-        switchMenu(162);
+        xCallibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = "";
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
@@ -569,12 +573,12 @@ void menuLoop(){
       break;
 
     case 160:
-      lcdLine1 = "ADD CALLIBRATION POINT - Move AFM using manual movement by X and Y, then select callibration option.";
+      lcdLine1 = "Add Point - Manually move AFM by XY, then select callibration option.";
       lcdLine2 = "Press any key";
       if (key) switchMenu(1);
       break;
 
-    
+    /*
     // Manual movement of stepper motors - Settings delay - save or discard delay.
     case 153:
       lcdLine1 = "Save? [#]";
@@ -582,18 +586,20 @@ void menuLoop(){
       if (key == '#') { manual_delay = msg_operation.toInt(); saveToEEPROM(); switchMenu(15); }
       if (key == '*') { switchMenu(15); }
       break;
+    */
 
     // Manual movement of stepper motors - Settings delay.
     case 152:
-      lcdLine1 = "INSERT DELAY (\xB5s) ([#] to exit, [*] to erase, numbers to write).";
+      lcdLine1 = "Delay (ms) ([#] to exit, [*] to erase).";
       if (key == '#') {
-        switchMenu(153);
+        manual_delay = msg_operation.toInt(); saveToEEPROM(); switchMenu(15);
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
       lcdLine2 = msg_operation.c_str();
       break;
 
+    /*
     // Manual movement of stepper motors - Settings steps - save or discard steps.
     case 151:
       lcdLine1 = "Save? [#]";
@@ -601,12 +607,13 @@ void menuLoop(){
       if (key == '#') { manual_steps = msg_operation.toInt(); saveToEEPROM(); switchMenu(15); }
       if (key == '*') { switchMenu(15); }
       break;
+    */
 
     // Manual movement of stepper motors - Settings steps.
     case 150:
-      lcdLine1 = "INSERT STEPS ([#] to exit, [*] to erase, numbers to write).";
+      lcdLine1 = "Steps ([#] to save, [*] to erase).";
       if (key == '#') {
-        switchMenu(151);
+        manual_steps = msg_operation.toInt(); saveToEEPROM(); switchMenu(15);
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
@@ -657,7 +664,7 @@ void menuLoop(){
 
     // CALLIBRATION
     case 16:
-      lcdLine1 = "CALLIBRATE";
+      lcdLine1 = "Callibrate";
       if (lcdVerticalScrollPivot >= msg_menu16_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu16[lcdVerticalScrollPivot];
       if (key == '#') {
@@ -679,7 +686,7 @@ void menuLoop(){
 
     // Manual movement of stepper motors - Settings.
     case 15:
-      lcdLine1 = "MANUAL SETTINGS";
+      lcdLine1 = "Manual Settings";
       if (lcdVerticalScrollPivot >= msg_menu15_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu15[lcdVerticalScrollPivot];
       if (key == '0') {msg_operation = String(manual_steps); switchMenu(150);}    // Steps
@@ -737,8 +744,12 @@ void menuLoop(){
     
     
     case 21:
-      /*
+      
       // Calculate scaling factors
+      lcdLine1 = "Calculating";
+      lcdLine2 = "scaling factors";
+      updateDisplay();
+      delay(timeDisplay);
       xStepsToRealMean = 0;
       yStepsToRealMean = 0;
       xStepsToRealN = 0;
@@ -753,61 +764,95 @@ void menuLoop(){
           yStepsToRealMean += yStepsToReal[factor];
         }
       }
-      xStepsToRealMean /= float(xStepsToRealN);
-      yStepsToRealMean /= float(yStepsToRealN);
+      if (xStepsToRealN > 0) xStepsToRealMean /= float(xStepsToRealN);
+      if (yStepsToRealN > 0) yStepsToRealMean /= float(yStepsToRealN);
+      if (xStepsToRealN == 0 || yStepsToRealN == 0) {
+        lcdLine1 = "ERROR! Need";
+        lcdLine2 = "Callibration!";
+        updateDisplay();
+        delay(timeDisplay);
+        switchMenu(2);
+      } else {
+      
+      // Confirm Autotuning
+      lcdLine1 = "Confirm (#):";
+      lcdLine2 = "Autotuned?";
+      boolean autotuning = true;
+      while (autotuning) {
+        updateDisplay();
+        if (keypad.getKey() == '#') autotuning = false; 
+      }
 
+      // Confirm Lines+Hz
+      lcdLine1 = "Confirm (#):";
+      msg_operation = "mHz:"+String(Hz)+", Lines:"+String(lines);
+      lcdLine2 = msg_operation.c_str();
+      boolean lineshz = true;
+      while (lineshz) {
+        startLoopTime = millis();
+        lcdHorizontalScrollCounter1 += loopDt;
+        lcdHorizontalScrollCounter2 += loopDt;
+        lcdVerticalScrollCounter += loopDt;
+        updateDisplay();
+        if (keypad.getKey() == '#') lineshz = false;
+        endLoopTime = millis();
+        loopDt = endLoopTime - startLoopTime;
+      }
+      
       // Message
       lcdLine1 = "----STARTING----";
       lcdLine2 = "--ACQUISITION---";
       updateDisplay();
-      delay(2500);
-
+      delay(timeDisplay);
+  
+      
       // Move the steppers and acquire images
       for (int i = 0; i < rows; i++){
         for(int j = 0; j < cols; j++){
           // Acquire image ij
-          lcdLine1 = "Acq. img.";
+          lcdLine1 = "Acquiring image:";
           msg_operation = "i:"+String(i)+" j:"+String(j);
           lcdLine2 = msg_operation.c_str();
           updateDisplay();
-          delay(2000);
-          acquireAFMImage(setpoint, lines, Hz);
+          delay(timeDisplay);
+          acquireAFMImage(lines, Hz);
           // Move motor along collumns
           lcdLine1 = "Powering X+ ...";
           lcdLine2 = " ";
           updateDisplay();
-          moveMotor(stepPinX, dirPinX, enablePinX, long(round(float(imgStep)*xStepsToRealMean)), 900000, 1, &steps_X);
+          moveMotor(stepPinX, dirPinX, enablePinX, long(round(float(imgStep)*xStepsToRealMean)), 10, 1, &steps_X);
         }
         // Go back to the beginning of the row
         lcdLine1 = "Powering X- ...";
         lcdLine2 = " ";
         updateDisplay();
-        moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 900000, 0, &steps_X);
+        moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 10, 0, &steps_X);
         // Go down one row
         lcdLine1 = "Powering Y- ...";
         lcdLine2 = " ";
         updateDisplay();
-        moveMotor(stepPinY, dirPinY, enablePinY, long(round(float(imgStep)*yStepsToRealMean)), 900000, 0, &steps_Y);
+        moveMotor(stepPinY, dirPinY, enablePinY, long(round(float(imgStep)*yStepsToRealMean)), 10, 0, &steps_Y);
       }
 
       // Homing
       lcdLine1 = "FINISHED";
       lcdLine2 = "Homing ...";
       updateDisplay();
-      moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 900000, 0, &steps_X);
-      moveMotor(stepPinY, dirPinY, enablePinY, rows*long(round(float(imgStep)*yStepsToRealMean)), 900000, 1, &steps_Y);
+      delay(timeDisplay);
+      moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 10, 0, &steps_X);
+      moveMotor(stepPinY, dirPinY, enablePinY, rows*long(round(float(imgStep)*yStepsToRealMean)), 10, 1, &steps_Y);
 
       // End routine
       switchMenu(2);
-      */
+      
+      }
       break;
       
-    
     
 
     // Acquisition routines for the AFM.
     case 2:
-      lcdLine1 = "ACQUISITION";
+      lcdLine1 = "Acquisition";
       if (lcdVerticalScrollPivot >= msg_menu2_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu2[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
@@ -817,7 +862,7 @@ void menuLoop(){
 
     // Manual movement of stepper motors.
     case 1:
-      lcdLine1 = "MANUAL/CALLIBRATE";
+      lcdLine1 = "Manual/Callibration";
       if (lcdVerticalScrollPivot >= msg_menu1_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu1[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
@@ -834,7 +879,7 @@ void menuLoop(){
 
     // Welcome splash screen
     case 0:
-      lcdLine1 = "WELCOME - AFM High-Range Automation @ IST";;
+      lcdLine1 = "AFM High-Range Automation @ IST";;
       lcdLine2 = "[*/#]: Scroll";
       if (key == '*') switchMenu(menu-1);
       if (key == '#') switchMenu(menu+1);
@@ -842,7 +887,7 @@ void menuLoop(){
     
     // Credits screen
     case -1:
-      lcdLine1 = "CREDITS - https://github.com/lannisraurus/afm-tools";
+      lcdLine1 = "Guide - github.com/lannisraurus/afm-tools";
       lcdLine2 = "[*/#]: Scroll";
       if (key == '*') switchMenu(menu-1);
       if (key == '#') switchMenu(menu+1);
@@ -850,7 +895,7 @@ void menuLoop(){
     
     // Reset
     case -2:
-      lcdLine1 = "RESET SETTINGS";
+      lcdLine1 = "Reset Settings";
       if (lcdVerticalScrollPivot >= msg_menu02_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu02[lcdVerticalScrollPivot];
       if (key == '#') switchMenu(menu+1);
