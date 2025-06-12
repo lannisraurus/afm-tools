@@ -8,7 +8,6 @@ https://www.hardware-x.com/article/S2468-0672(23)00054-8/fulltext
 Depending on your Nanoscope version the keyboard shortcuts might be different, in which case
 it is recommended to alter the acquireAFMImage function. It is also important to check all the
 variables and make sure that they are well suited to your setup.
-
 */
 
 /* ///////////////////
@@ -56,6 +55,7 @@ Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 */ ///////////////////////
 
 // Analog Sensor Data
+int micAnalogMax = -1;  // Microphone reading (buzzer) all time max.
 int micAnalog = -1;     // Microphone reading (buzzer).
 int rotaryAnalogX = -1; // First Rotary Encoder X.
 int rotaryAnalogY = -1; // Second Rotary Encoder Y.
@@ -64,12 +64,12 @@ const byte rotaryXPin = A1;    // Rotary Encoder 1 pin.
 const byte rotaryYPin = A2;    // Rotary Encoder 2 pin.
 
 // Motor Wiring Variables
-const byte dirPinX = 8;
-const byte stepPinX = 9;
-const byte enablePinX = 10;
-const byte dirPinY = 11;
-const byte stepPinY = 12;
-const byte enablePinY = 13;
+const byte dirPinY = 8;
+const byte stepPinY = 9;
+const byte enablePinY = 10;
+const byte dirPinX = 11;
+const byte stepPinX = 12;
+const byte enablePinX = 13;
 
 /* ///////////////////////
         UI VARIABLES
@@ -109,17 +109,17 @@ String msg_operation = "";   // For intermediate conversions of Strings to c_str
 String msg_operation2 = "";  // For intermediate conversions of Strings to c_str (char*) and/or user input.
 
 // Vertical scrolling arrays
-const char * msg_menu17[] = {"[*]: Left", "[#]: Right", "[0]: Return", "[1]: Delete"};
+const char * msg_menu17[] = {"[*]: <-", "[#]: ->", "[0]: Back", "[1]: Erase"};
 const byte msg_menu17_size = 4;
-const char * msg_menu16[] = {"[#]: Proceed", "[*]: Return"};
+const char * msg_menu16[] = {"[#]: Ok", "[*]: Back"};
 const byte msg_menu16_size = 2;
-const char * msg_menu15[] = {"[0]: Steps", "[1]: Delay", "[*/#]: Return"};
+const char * msg_menu15[] = {"[0]: Steps", "[1]: Delay", "[*/#]: Back"};
 const byte msg_menu15_size = 3;
-const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[*]: Return"};
+const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[*]: Back"};
 const byte msg_menu2_size = 3;
-const char * msg_menu1[] = {"[0]: Settings", "[1]: Callibrate", "[3]: Edit Cal.", "[5]: View steps", "[4]: Move X-", "[6]: Move X+", "[8]: Move Y-", "[2]: Move Y+", "[#/*]: Scroll"};
+const char * msg_menu1[] = {"[0]: Settings", "[1]: Callib", "[3]: Edit Cal.", "[5]: View Steps", "[4]: X-", "[6]: X+", "[8]: Y-", "[2]: Y+", "[#/*]: Scroll"};
 const byte msg_menu1_size = 9;
-const char * msg_menu02[] = {"[0]: Proceed", "[#]: Return"};
+const char * msg_menu02[] = {"[0]: Proceed", "[#]: Back"};
 const byte msg_menu02_size = 2;
 
 // Callibration
@@ -153,9 +153,6 @@ const long timeDisplay = 2000;    // ms  time for a display during acquisition r
 const long timeOperation = 500;   // ms  time between generic keyboard operations
 const long timeEngage = 2000;     // ms  time to wait after engaging (menu disappearing)
 
-// AFM Mic Threshold
-const int micThreshold = 800; // out of 1024, sensor units
-
 // AFM Conversion variables
 float xStepsToRealMean = 0;
 float yStepsToRealMean = 0;
@@ -167,6 +164,9 @@ byte yStepsToRealN = 0;
 */ ///////////////////////////////////////
 
 // ALL VARIABLES DEFINED HERE ARE SET IN resetSettings!
+
+// AFM Mic Threshold
+int micThreshold; // out of 1024, sensor units
 
 // Manual movement variables
 long manual_delay;  // microseconds
@@ -202,6 +202,7 @@ void resetSettings(){
   rows = 3;
   cols = 3;
   imgStep = 1000;
+  micThreshold = 900;
 }
 
 // Load data from the EEPROM and report on success.
@@ -222,6 +223,7 @@ int loadFromEEPROM(){
     EEPROM.get(eepromPivot, rows); eepromPivot += sizeof(rows);
     EEPROM.get(eepromPivot, cols); eepromPivot += sizeof(cols);
     EEPROM.get(eepromPivot, imgStep); eepromPivot += sizeof(imgStep);
+    EEPROM.get(eepromPivot, micThreshold); eepromPivot += sizeof(micThreshold);
     return 0;
   }
   return -99;
@@ -241,6 +243,7 @@ void saveToEEPROM(){
   EEPROM.put(eepromPivot, rows); eepromPivot += sizeof(rows);
   EEPROM.put(eepromPivot, cols); eepromPivot += sizeof(cols);
   EEPROM.put(eepromPivot, imgStep); eepromPivot += sizeof(imgStep);
+  EEPROM.put(eepromPivot, micThreshold); eepromPivot += sizeof(micThreshold);
 }
 
 /* /////////////////////////////////
@@ -742,6 +745,16 @@ void menuLoop(){
       if (key) switchMenu(1);
       break;
     
+    case 22:
+      msg_operation2 = "val: "+String(micAnalog)+", max: "+String(micAnalogMax)+" ([#] to save, [*] to erase)."
+      lcdLine1 = msg_operation2.c_str();
+      if (key == '#') {
+        micThreshold = msg_operation.toInt(); saveToEEPROM(); switchMenu(2);
+      } else if (key == '*' && msg_operation.length() > 0) {
+        msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
+      } else if (key && key != '*' && key != '#') msg_operation += key;
+      lcdLine2 = msg_operation.c_str();
+      break;
     
     case 21:
       
@@ -858,6 +871,7 @@ void menuLoop(){
       if (key == '*') switchMenu(menu-1);
       if (key == '0') { msg_operation = String(rows); switchMenu(200); }  // Acquisition Settings
       if (key == '1') switchMenu(21);  // Begin Acquisition
+      if (key == '2') { msg_operation = String(micThreshold); switchMenu(22); }  // Adjust Mic Threshold
       break;
 
     // Manual movement of stepper motors.
@@ -966,6 +980,9 @@ void loop() {
   micAnalog = analogRead(micPin);
   rotaryAnalogX = analogRead(rotaryXPin);
   rotaryAnalogY = analogRead(rotaryYPin);
+
+  // Mic Input max
+  if (micAnalogMax < micAnalog) micAnalogMax = micAnalog;
 
   // Keypad Digital Buttons Acquire
   key = keypad.getKey();
