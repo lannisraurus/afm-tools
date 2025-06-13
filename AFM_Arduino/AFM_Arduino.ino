@@ -56,6 +56,7 @@ Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
 // Analog Sensor Data
 int micAnalogMax = -1;  // Microphone reading (buzzer) all time max.
+int micAnalogMin = 1024; // Microphone reading (buzzer) all time low.
 int micAnalog = -1;     // Microphone reading (buzzer).
 int rotaryAnalogX = -1; // First Rotary Encoder X.
 int rotaryAnalogY = -1; // Second Rotary Encoder Y.
@@ -115,9 +116,9 @@ const char * msg_menu16[] = {"[#]: Ok", "[*]: Back"};
 const byte msg_menu16_size = 2;
 const char * msg_menu15[] = {"[0]: Steps", "[1]: Delay", "[*/#]: Back"};
 const byte msg_menu15_size = 3;
-const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[*]: Back"};
-const byte msg_menu2_size = 3;
-const char * msg_menu1[] = {"[0]: Settings", "[1]: Callib", "[3]: Edit Cal.", "[5]: View Steps", "[4]: X-", "[6]: X+", "[8]: Y-", "[2]: Y+", "[#/*]: Scroll"};
+const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[2]: Mic.Thresh." , "[*]: Back"};
+const byte msg_menu2_size = 4;
+const char * msg_menu1[] = {"[0]: Settings", "[1]: Callib", "[3]: Edit Cal.", "[5]: See Steps", "[4]: X-", "[6]: X+", "[8]: Y-", "[2]: Y+", "[#/*]: Scroll"};
 const byte msg_menu1_size = 9;
 const char * msg_menu02[] = {"[0]: Proceed", "[#]: Back"};
 const byte msg_menu02_size = 2;
@@ -132,7 +133,7 @@ byte callibrationStep = 0;  // Internal variable that tracks where in the callib
 */ /////////////////////////////////////////////
 
 // EEPROM verification ID. Change for hard reset of all settings.
-const byte eepromID = 71;
+const byte eepromID = 69;
 
 // Step counters
 long steps_X = 0; // steps
@@ -746,7 +747,7 @@ void menuLoop(){
       break;
     
     case 22:
-      msg_operation2 = "val: "+String(micAnalog)+", max: "+String(micAnalogMax)+" ([#] to save, [*] to erase)."
+      msg_operation2 = String(micAnalogMin)+"/"+String(micAnalog)+"/"+String(micAnalogMax);
       lcdLine1 = msg_operation2.c_str();
       if (key == '#') {
         micThreshold = msg_operation.toInt(); saveToEEPROM(); switchMenu(2);
@@ -983,6 +984,7 @@ void loop() {
 
   // Mic Input max
   if (micAnalogMax < micAnalog) micAnalogMax = micAnalog;
+  if (micAnalogMin > micAnalog) micAnalogMin = micAnalog;
 
   // Keypad Digital Buttons Acquire
   key = keypad.getKey();
