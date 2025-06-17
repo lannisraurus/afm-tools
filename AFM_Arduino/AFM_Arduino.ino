@@ -55,9 +55,10 @@ Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 */ ///////////////////////
 
 // Analog Sensor Data
-int micAnalogMax = -1;  // Microphone reading (buzzer) all time max.
-int micAnalogMin = 1024; // Microphone reading (buzzer) all time low.
-int micAnalog = -1;     // Microphone reading (buzzer).
+int micReadMax = 0;  // Microphone reading (buzzer) all time max.
+int micReadMin = 1024; // Microphone reading (buzzer) all time low.
+int micRead = -1;     // Microphone reading (buzzer).
+int micReadHits = 0;  // Consecutive times the mic has had signal.
 int rotaryAnalogX = -1; // First Rotary Encoder X.
 int rotaryAnalogY = -1; // Second Rotary Encoder Y.
 const byte micPin = A0;        // Microphone data pin.
@@ -203,7 +204,7 @@ void resetSettings(){
   rows = 3;
   cols = 3;
   imgStep = 1000;
-  micThreshold = 900;
+  micThreshold = 1;
 }
 
 // Load data from the EEPROM and report on success.
@@ -275,7 +276,16 @@ void acquireAFMImage(int lines, int Hz){
     updateDisplay();
     Keyboard.press(KEY_LEFT_ALT); Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
     Keyboard.press('e'); delay(timeBetweenKeys); Keyboard.releaseAll();
-    while( analogRead(micPin) < micThreshold ) {}
+    boolean engaging = true;
+    while( engaging ) {
+      micRead = digitalRead(micPin);
+      if (micRead) {
+        micReadHits += 1;
+      } else {
+        micReadHits = 0;
+      }
+      if (micReadHits > micThreshold) engaging = false;
+    }
     delay(timeBetweenKeys);
 
     // Engage delay
@@ -747,10 +757,16 @@ void menuLoop(){
       break;
     
     case 22:
-      msg_operation2 = String(micAnalogMin)+"/"+String(micAnalog)+"/"+String(micAnalogMax);
-      lcdLine1 = msg_operation2.c_str();
+      if (micReadHits > micThreshold) {
+        lcdLine1 = "SIGNAL!";
+      } else {
+        lcdLine1 = "NO SIGNAL";
+      }
       if (key == '#') {
-        micThreshold = msg_operation.toInt(); saveToEEPROM(); switchMenu(2);
+        micThreshold = msg_operation.toInt(); saveToEEPROM();
+        micReadMin = 1024;
+        micReadMax = 0;
+        switchMenu(2);
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
@@ -957,6 +973,8 @@ void setup(){
   pinMode(enablePinY, OUTPUT);
   digitalWrite(enablePinX, HIGH);
   digitalWrite(enablePinY, HIGH);
+  // Mic setup
+  pinMode(micPin, INPUT);
   // EEPROM and loading settings
   resetSettings();
   menu = loadFromEEPROM();
@@ -977,14 +995,21 @@ void loop() {
   lcdHorizontalScrollCounter2 += loopDt;
   lcdVerticalScrollCounter += loopDt;
 
+  // Digital Sensors Input Acquire
+  micRead = digitalRead(micPin);
+
   // Analog Sensors Input Acquire
-  micAnalog = analogRead(micPin);
   rotaryAnalogX = analogRead(rotaryXPin);
   rotaryAnalogY = analogRead(rotaryYPin);
 
-  // Mic Input max
-  if (micAnalogMax < micAnalog) micAnalogMax = micAnalog;
-  if (micAnalogMin > micAnalog) micAnalogMin = micAnalog;
+  // Mic
+  if (micRead) {
+    micReadHits += 1;
+  } else {
+    micReadHits = 0;
+  }
+  if (micReadMax < micReadHits) micReadMax = micRead;
+  if (micReadMin > micReadHits) micReadMin = micRead;
 
   // Keypad Digital Buttons Acquire
   key = keypad.getKey();
