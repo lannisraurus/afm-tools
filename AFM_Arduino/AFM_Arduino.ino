@@ -7,7 +7,13 @@ https://www.hardware-x.com/article/S2468-0672(23)00054-8/fulltext
 
 Depending on your Nanoscope version the keyboard shortcuts might be different, in which case
 it is recommended to alter the acquireAFMImage function. It is also important to check all the
-variables and make sure that they are well suited to your setup.
+variables and make sure that they are well suited to your setup (some acquisition variables
+cannot be changed in the user GUI!).
+
+It is important to note that originally it was planned to receive direct input from the AFM
+acquisition system utilizing a microphone, and taking in input with rotary encoders to cross-check
+motor movement (missing steps for some reason). These features were not implemented due to time
+constraints. You may upgrade this code to allow for these features in your build.
 */
 
 /* ///////////////////
@@ -54,13 +60,10 @@ Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
         SENSOR PINS
 */ ///////////////////////
 
-// Analog Sensor Data
-int micReadMax = 0;  // Microphone reading (buzzer) all time max.
-int micReadMin = 1024; // Microphone reading (buzzer) all time low.
-int micRead = -1;     // Microphone reading (buzzer).
-int micReadHits = 0;  // Consecutive times the mic has had signal.
-int rotaryAnalogX = -1; // First Rotary Encoder X.
-int rotaryAnalogY = -1; // Second Rotary Encoder Y.
+// Sensor Data. NOTE: NOT USED IN THIS BUILD! MAY BE USED IN FUTURE RENDITIONS!
+int micRead = -1;              // Microphone reading (buzzer).
+int rotaryAnalogX = -1;        // First Rotary Encoder X.
+int rotaryAnalogY = -1;        // Second Rotary Encoder Y.
 const byte micPin = A0;        // Microphone data pin.
 const byte rotaryXPin = A1;    // Rotary Encoder 1 pin.
 const byte rotaryYPin = A2;    // Rotary Encoder 2 pin.
@@ -117,43 +120,41 @@ const char * msg_menu16[] = {"[#]: Ok", "[*]: Back"};
 const byte msg_menu16_size = 2;
 const char * msg_menu15[] = {"[0]: Steps", "[1]: Delay", "[*/#]: Back"};
 const byte msg_menu15_size = 3;
-const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[2]: Mic.Thresh." , "[*]: Back"};
-const byte msg_menu2_size = 4;
-const char * msg_menu1[] = {"[0]: Settings", "[1]: Callib", "[3]: Edit Cal.", "[5]: See Steps", "[4]: X-", "[6]: X+", "[8]: Y-", "[2]: Y+", "[#/*]: Scroll"};
+const char * msg_menu2[] = {"[0]: Settings", "[1]: Acquire", "[*]: Back"};
+const byte msg_menu2_size = 3;
+const char * msg_menu1[] = {"[0]: Settings", "[1]: Calib", "[3]: Edit Cal.", "[5]: See Steps", "[4]: X-", "[6]: X+", "[8]: Y-", "[2]: Y+", "[#/*]: Scroll"};
 const byte msg_menu1_size = 9;
 const char * msg_menu02[] = {"[0]: Proceed", "[#]: Back"};
 const byte msg_menu02_size = 2;
 
-// Callibration
-byte calPointMenuPivot = 0; // Callibration point see menu
-byte callibrationStep = 0;  // Internal variable that tracks where in the callibration procedure the user is.
-                            // 0: add point; 1: insert displacement.
+// Calibration
+byte calPointMenuPivot = 0; // Calibration point see menu
 
 /* /////////////////////////////////////////////
        !!! AFM VARIABLES - NOT IN EEPROM !!!
 */ /////////////////////////////////////////////
+// Adjust these variables if needed!
 
 // EEPROM verification ID. Change for hard reset of all settings.
-const byte eepromID = 69;
+const byte eepromID = 43;
 
 // Step counters
 long steps_X = 0; // steps
 long steps_Y = 0; // steps
 
-// Callibration
-const byte callibrationPointsMax = 6;
-long xCallibrationStepsStart = 0;     // steps
-long yCallibrationStepsStart= 0;      // steps
-long xCallibrationStepsStop = 0;      // steps
-long yCallibrationStepsStop = 0;      // steps
-float xCallibrationMeasure = 0;       // nm
-float yCallibrationMeasure = 0;       // nm
+// Calibration
+const byte calibrationPointsMax = 6;
+int xCalibrationSteps = 0;         // Steps
+int yCalibrationSteps = 0;         // Steps
+int xCalibrationMeasure = 0;       // nm
+int yCalibrationMeasure = 0;       // nm
 
 // AFM Keyboard pressing / Displaying
 const long timeBetweenKeys = 250; // ms  time that a key is pressed for
 const long timeDisplay = 2000;    // ms  time for a display during acquisition routine
 const long timeOperation = 500;   // ms  time between generic keyboard operations
 const long timeEngage = 2000;     // ms  time to wait after engaging (menu disappearing)
+const long timeEngaging = 300000; // ms  time it takes to engage. ALTERNATIVE TO ORIGINAL MICROPHONE IDEA!!!
 
 // AFM Conversion variables
 float xStepsToRealMean = 0;
@@ -167,16 +168,13 @@ byte yStepsToRealN = 0;
 
 // ALL VARIABLES DEFINED HERE ARE SET IN resetSettings!
 
-// AFM Mic Threshold
-int micThreshold; // out of 1024, sensor units
-
 // Manual movement variables
 long manual_delay;  // microseconds
 long manual_steps;  // steps
 
-// Callibration
-float xStepsToReal[callibrationPointsMax];  // nm/step
-float yStepsToReal[callibrationPointsMax];  // nm/step
+// Calibration
+float xStepsToReal[calibrationPointsMax];  // nm/step
+float yStepsToReal[calibrationPointsMax];  // nm/step
 byte stepsToRealPivot;                      // How many points exist + 1
 
 // Acquisition variables
@@ -197,14 +195,13 @@ void resetSettings(){
   manual_delay = 10;
   manual_steps = 128;
   stepsToRealPivot = 0;
-  for (int i = 0; i < callibrationPointsMax; i++) xStepsToReal[i] = 0;
-  for (int i = 0; i < callibrationPointsMax; i++) yStepsToReal[i] = 0;
+  for (int i = 0; i < calibrationPointsMax; i++) xStepsToReal[i] = 0;
+  for (int i = 0; i < calibrationPointsMax; i++) yStepsToReal[i] = 0;
   Hz = 1000;
   lines = 128;
   rows = 3;
   cols = 3;
   imgStep = 1000;
-  micThreshold = 1;
 }
 
 // Load data from the EEPROM and report on success.
@@ -225,7 +222,6 @@ int loadFromEEPROM(){
     EEPROM.get(eepromPivot, rows); eepromPivot += sizeof(rows);
     EEPROM.get(eepromPivot, cols); eepromPivot += sizeof(cols);
     EEPROM.get(eepromPivot, imgStep); eepromPivot += sizeof(imgStep);
-    EEPROM.get(eepromPivot, micThreshold); eepromPivot += sizeof(micThreshold);
     return 0;
   }
   return -99;
@@ -245,7 +241,6 @@ void saveToEEPROM(){
   EEPROM.put(eepromPivot, rows); eepromPivot += sizeof(rows);
   EEPROM.put(eepromPivot, cols); eepromPivot += sizeof(cols);
   EEPROM.put(eepromPivot, imgStep); eepromPivot += sizeof(imgStep);
-  EEPROM.put(eepromPivot, micThreshold); eepromPivot += sizeof(micThreshold);
 }
 
 /* /////////////////////////////////
@@ -270,22 +265,34 @@ void moveMotor(byte stepPin, byte dirPin, byte enablePin, long steps, long stepD
 // Acquire an AFM image.
 void acquireAFMImage(int lines, int Hz){
 
-    // ENGAGE
+    // ENGAGE INPUT
     lcdLine1 = "Engaging...";
-    lcdLine2 = "Waiting for beep";
+    lcdLine2 = "key = force skip";
     updateDisplay();
     Keyboard.press(KEY_LEFT_ALT); Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
     Keyboard.press('e'); delay(timeBetweenKeys); Keyboard.releaseAll();
+
+    // Engage delay
+    delay(timeEngage);
+
+    // Wait for engaging. IF YOU INCLUDE MICROPHONE, YOU WOULD PLACE CODE HERE!!!
+    // Something like -> read microphone; if read > threshold, break out of loop.
+    keypad.getKey();
+    unsigned long StartTimeEngage = millis();
+    unsigned long CurrentTimeEngage = millis();
+    msg_operation2 = "Total="+String(long(round(timeEngaging/1000.)))+"s";
+    lcdLine2 = msg_operation2.c_str();
     boolean engaging = true;
-    while( engaging ) {
-      micRead = digitalRead(micPin);
-      if (micRead) {
-        micReadHits += 1;
-      } else {
-        micReadHits = 0;
-      }
-      if (micReadHits > micThreshold) engaging = false;
+    while(engaging) {
+      CurrentTimeEngage = millis();
+      msg_operation = "Time="+ String(round((CurrentTimeEngage - StartTimeEngage)/1000.))+"s";
+      lcdLine1 = msg_operation.c_str();
+      updateDisplay();
+      if ( (CurrentTimeEngage - StartTimeEngage) > timeEngaging ) engaging = false;
+      if (keypad.getKey()) engaging = false;
     }
+    
+    // Standard Delay
     delay(timeBetweenKeys);
 
     // Engage delay
@@ -307,7 +314,7 @@ void acquireAFMImage(int lines, int Hz){
     // Standard delay
     delay(timeOperation);
 
-    // REVERSE TO PREVENT DRIFT
+    // REVERSE TO PREVENT DRIFT - Wasn't working properly in our case; you may reimplement!
     /*lcdLine1 = "Setting...";
     lcdLine2 = "Reversing";
     updateDisplay();
@@ -315,8 +322,7 @@ void acquireAFMImage(int lines, int Hz){
     Keyboard.press('r'); delay(timeBetweenKeys); Keyboard.releaseAll();
 
     // Standard delay
-    delay(timeOperation);
-    */
+    delay(timeOperation);*/
 
     // BEGIN CAPTURING AND WITHDRAW
     lcdLine1 = "Setting...";
@@ -352,6 +358,8 @@ void acquireAFMImage(int lines, int Hz){
       msg_operation = "Time="+ String(round((CurrentTime - StartTime)/1000.))+"s";
       lcdLine1 = msg_operation.c_str();
       updateDisplay();
+
+      if (keypad.getKey()) break;
 
     }
     
@@ -524,14 +532,14 @@ void menuLoop(){
       lcdLine2 = "Press any key";
 
       if (key) {
-        if (stepsToRealPivot < callibrationPointsMax) {
+        if (stepsToRealPivot < calibrationPointsMax) {
 
-          if (xCallibrationStepsStop - xCallibrationStepsStart != 0){
-            xStepsToReal[stepsToRealPivot] = float(xCallibrationMeasure)/float(abs(xCallibrationStepsStop - xCallibrationStepsStart));
+          if (xCalibrationSteps != 0){
+            xStepsToReal[stepsToRealPivot] = float(xCalibrationMeasure)/float(xCalibrationSteps);
           } else xStepsToReal[stepsToRealPivot] = 0;
 
-          if (yCallibrationStepsStop - yCallibrationStepsStart != 0){
-            yStepsToReal[stepsToRealPivot] = float(yCallibrationMeasure)/float(abs(yCallibrationStepsStop - yCallibrationStepsStart));
+          if (yCalibrationSteps != 0){
+            yStepsToReal[stepsToRealPivot] = float(yCalibrationMeasure)/float(yCalibrationSteps);
           } else yStepsToReal[stepsToRealPivot] = 0;
         
           stepsToRealPivot += 1;
@@ -551,15 +559,25 @@ void menuLoop(){
       lcdLine1 = "Units?";
       if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu162[lcdVerticalScrollPivot];
-      if (key == '0') { yCallibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(165); }
-      if (key == '1') { yCallibrationMeasure = float(msg_operation.toInt()); switchMenu(165); }
+      if (key == '0') { yCalibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(165); }
+      if (key == '1') { yCalibrationMeasure = float(msg_operation.toInt()); switchMenu(165); }
       break;
     */
 
-    case 163:
-      lcdLine1 = "Y Displacement (nm). 0 to ignore. [#] to proceed. [*] to erase.";
+    case 164:
+      lcdLine1 = "dY (steps). 0 to ignore. [#] to proceed. [*] to erase.";
       if (key == '#') {
-        yCallibrationMeasure = float(msg_operation.toInt()); switchMenu(165);
+        yCalibrationSteps = float(msg_operation.toInt()); switchMenu(165); msg_operation = "";
+      } else if (key == '*' && msg_operation.length() > 0) {
+        msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
+      } else if (key && key != '*' && key != '#') msg_operation += key;
+      lcdLine2 = msg_operation.c_str();
+      break;
+
+    case 163:
+      lcdLine1 = "dY (nm). 0 to ignore. [#] to proceed. [*] to erase.";
+      if (key == '#') {
+        yCalibrationMeasure = float(msg_operation.toInt()); switchMenu(164); msg_operation = "";
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
@@ -571,26 +589,38 @@ void menuLoop(){
       lcdLine1 = "Units?";
       if (lcdVerticalScrollPivot >= msg_menu162_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu162[lcdVerticalScrollPivot];
-      if (key == '0') { xCallibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
-      if (key == '1') { xCallibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
+      if (key == '0') { xCalibrationMeasure = 1000.f*float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
+      if (key == '1') { xCalibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = ""; }
       break;
     */
 
-    case 161:
-      lcdLine1 = "X Displacement (nm). 0 to ignore. [#] to proceed. [*] to erase.";
+    case 162:
+      lcdLine1 = "dX (steps). 0 to ignore. [#] to proceed. [*] to erase.";
       if (key == '#') {
-        xCallibrationMeasure = float(msg_operation.toInt()); switchMenu(163); msg_operation = "";
+        xCalibrationSteps = msg_operation.toInt(); switchMenu(163); msg_operation = "";
       } else if (key == '*' && msg_operation.length() > 0) {
         msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
       } else if (key && key != '*' && key != '#') msg_operation += key;
       lcdLine2 = msg_operation.c_str();
       break;
 
+    case 161:
+      lcdLine1 = "dX (nm). 0 to ignore. [#] to proceed. [*] to erase.";
+      if (key == '#') {
+        xCalibrationMeasure = msg_operation.toInt(); switchMenu(162); msg_operation = "";
+      } else if (key == '*' && msg_operation.length() > 0) {
+        msg_operation = msg_operation.substring(0, msg_operation.length() - 1);
+      } else if (key && key != '*' && key != '#') msg_operation += key;
+      lcdLine2 = msg_operation.c_str();
+      break;
+
+    /*
     case 160:
-      lcdLine1 = "Add Point - Manually move AFM by XY, then select callibration option.";
+      lcdLine1 = "Add Point - Manually move AFM by XY, then select calibration option.";
       lcdLine2 = "Press any key";
       if (key) switchMenu(1);
       break;
+    */
 
     /*
     // Manual movement of stepper motors - Settings delay - save or discard delay.
@@ -634,7 +664,7 @@ void menuLoop(){
       lcdLine2 = msg_operation.c_str();
       break;
 
-    // MANAGE CALLIBRATION POINTS
+    // MANAGE CALIBRATION POINTS
     case 17:
       lcdLine1 = "";
       if (lcdVerticalScrollPivot >= msg_menu17_size) lcdVerticalScrollPivot = 0;
@@ -676,24 +706,14 @@ void menuLoop(){
       
       break;
 
-    // CALLIBRATION
+    // CALIBRATION
     case 16:
-      lcdLine1 = "Callibrate";
+      lcdLine1 = "Add cal. point?";
       if (lcdVerticalScrollPivot >= msg_menu16_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu16[lcdVerticalScrollPivot];
       if (key == '#') {
-        if (callibrationStep == 0){
-          xCallibrationStepsStart = steps_X;
-          yCallibrationStepsStart = steps_Y;
-          callibrationStep = 1;
-          switchMenu(160);
-        }else{
-          msg_operation = "";
-          xCallibrationStepsStop = steps_X;
-          yCallibrationStepsStop = steps_Y;
-          callibrationStep = 0;
-          switchMenu(161);
-        }
+        msg_operation = "";
+        switchMenu(161);
       }
       if (key == '*') switchMenu(1);  // Return
       break;
@@ -756,8 +776,9 @@ void menuLoop(){
       if (key) switchMenu(1);
       break;
     
+    /*
     case 22:
-      if (micReadHits > micThreshold) {
+      if (micRead) {
         lcdLine1 = "SIGNAL!";
       } else {
         lcdLine1 = "NO SIGNAL";
@@ -772,6 +793,7 @@ void menuLoop(){
       } else if (key && key != '*' && key != '#') msg_operation += key;
       lcdLine2 = msg_operation.c_str();
       break;
+    */
     
     case 21:
       
@@ -784,7 +806,7 @@ void menuLoop(){
       yStepsToRealMean = 0;
       xStepsToRealN = 0;
       yStepsToRealN = 0;
-      for (int factor = 0; factor < callibrationPointsMax; factor++){
+      for (int factor = 0; factor < calibrationPointsMax; factor++){
         if (xStepsToReal[factor] > 0){
           xStepsToRealN += 1;
           xStepsToRealMean += xStepsToReal[factor];
@@ -798,11 +820,19 @@ void menuLoop(){
       if (yStepsToRealN > 0) yStepsToRealMean /= float(yStepsToRealN);
       if (xStepsToRealN == 0 || yStepsToRealN == 0) {
         lcdLine1 = "ERROR! Need";
-        lcdLine2 = "Callibration!";
+        lcdLine2 = "Calibration!";
         updateDisplay();
         delay(timeDisplay);
         switchMenu(2);
       } else {
+
+      // Scaling Factors Display
+      msg_operation = "X:"+String(xStepsToRealMean, 3);
+      msg_operation2 = "Y:"+String(yStepsToRealMean, 3);
+      lcdLine1 = msg_operation.c_str();
+      lcdLine2 = msg_operation2.c_str();
+      updateDisplay();
+      delay(timeDisplay);
       
       // Confirm Autotuning
       lcdLine1 = "Confirm (#):";
@@ -850,18 +880,18 @@ void menuLoop(){
           lcdLine1 = "Powering X+ ...";
           lcdLine2 = " ";
           updateDisplay();
-          moveMotor(stepPinX, dirPinX, enablePinX, long(round(float(imgStep)*xStepsToRealMean)), 10, 1, &steps_X);
+          moveMotor(stepPinX, dirPinX, enablePinX, long(round(float(imgStep)/xStepsToRealMean)), 10, 1, &steps_X);
         }
         // Go back to the beginning of the row
         lcdLine1 = "Powering X- ...";
         lcdLine2 = " ";
         updateDisplay();
-        moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 10, 0, &steps_X);
+        moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)/xStepsToRealMean)), 10, 0, &steps_X);
         // Go down one row
         lcdLine1 = "Powering Y- ...";
         lcdLine2 = " ";
         updateDisplay();
-        moveMotor(stepPinY, dirPinY, enablePinY, long(round(float(imgStep)*yStepsToRealMean)), 10, 0, &steps_Y);
+        moveMotor(stepPinY, dirPinY, enablePinY, long(round(float(imgStep)/yStepsToRealMean)), 10, 0, &steps_Y);
       }
 
       // Homing
@@ -869,8 +899,8 @@ void menuLoop(){
       lcdLine2 = "Homing ...";
       updateDisplay();
       delay(timeDisplay);
-      moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)*xStepsToRealMean)), 10, 0, &steps_X);
-      moveMotor(stepPinY, dirPinY, enablePinY, rows*long(round(float(imgStep)*yStepsToRealMean)), 10, 1, &steps_Y);
+      moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)/xStepsToRealMean)), 10, 0, &steps_X);
+      moveMotor(stepPinY, dirPinY, enablePinY, rows*long(round(float(imgStep)/yStepsToRealMean)), 10, 1, &steps_Y);
 
       // End routine
       switchMenu(2);
@@ -888,12 +918,12 @@ void menuLoop(){
       if (key == '*') switchMenu(menu-1);
       if (key == '0') { msg_operation = String(rows); switchMenu(200); }  // Acquisition Settings
       if (key == '1') switchMenu(21);  // Begin Acquisition
-      if (key == '2') { msg_operation = String(micThreshold); switchMenu(22); }  // Adjust Mic Threshold
+      // if (key == '2') { msg_operation = String(micThreshold); switchMenu(22); }  // Adjust Mic Threshold - DEPRECATED!! YOU MAY ADD IF YOU WANT :)
       break;
 
     // Manual movement of stepper motors.
     case 1:
-      lcdLine1 = "Manual/Callibration";
+      lcdLine1 = "Manual/Calibration";
       if (lcdVerticalScrollPivot >= msg_menu1_size) lcdVerticalScrollPivot = 0;
       lcdLine2 = msg_menu1[lcdVerticalScrollPivot];
       if (key == '*') switchMenu(menu-1);
@@ -904,8 +934,8 @@ void menuLoop(){
       if (key == '8') switchMenu(13); // Y- Move (done)
       if (key == '2') switchMenu(14); // Y+ Move (done)
       if (key == '0') switchMenu(15); // Movement Settings (done)
-      if (key == '1') switchMenu(16); // Callibrate
-      if (key == '3') {switchMenu(17); calPointMenuPivot = 0;} // Manage Callibration points
+      if (key == '1') switchMenu(16); // Calibrate
+      if (key == '3') {switchMenu(17); calPointMenuPivot = 0;} // Manage Calibration points
       break;
 
     // Welcome splash screen
@@ -974,7 +1004,7 @@ void setup(){
   digitalWrite(enablePinX, HIGH);
   digitalWrite(enablePinY, HIGH);
   // Mic setup
-  pinMode(micPin, INPUT);
+  // pinMode(micPin, INPUT);
   // EEPROM and loading settings
   resetSettings();
   menu = loadFromEEPROM();
@@ -995,22 +1025,6 @@ void loop() {
   lcdHorizontalScrollCounter2 += loopDt;
   lcdVerticalScrollCounter += loopDt;
 
-  // Digital Sensors Input Acquire
-  micRead = digitalRead(micPin);
-
-  // Analog Sensors Input Acquire
-  rotaryAnalogX = analogRead(rotaryXPin);
-  rotaryAnalogY = analogRead(rotaryYPin);
-
-  // Mic
-  if (micRead) {
-    micReadHits += 1;
-  } else {
-    micReadHits = 0;
-  }
-  if (micReadMax < micReadHits) micReadMax = micRead;
-  if (micReadMin > micReadHits) micReadMin = micRead;
-
   // Keypad Digital Buttons Acquire
   key = keypad.getKey();
 
@@ -1019,8 +1033,7 @@ void loop() {
 
   // Vertical Scrolling
   if (lcdVerticalScrollCounter >= lcdVerticalScrollMax) { lcdVerticalScrollCounter = 0; lcdVerticalScrollPivot += 1; }
-
-  // Update LCD Display
+  // Update LCD Display (+Horizontal Scrolling)
   updateDisplay();
 
   // Time keeping
