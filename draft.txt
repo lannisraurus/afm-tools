@@ -1,0 +1,25 @@
+TITLE: Atomic Force Microscopy: High-Range Image Acquisition
+SUBTITLE: An automation upgrade to the DI Dimension 3100 AFM
+
+ABSTRACT: Short description with summary of results.
+
+MOTIVATION/INTRODUCTION: AFM technology intro, purpose, motivation.
+
+THEORY - PHYSICS: Atomic Force Microscopy physical principles and models (point-mass, cantilever beam theory, acting forces), control system, parameters.
+THEORY - ELECTRONICS: I2C Protocol, stepper motor physics and controlling drivers.
+THEORY - 3D PRINTING: PLA 3D printing, uses, advantages/disadvantages.
+
+BUILD - MATERIALS: List of materials and their prices.
+BUILD - SCHEMATICS: List of schematic files, circuitry, code, etc.
+BUILD - ACQUISITION PROGRAMME DESCRIPTION: Information on the developed software and how to use it (Arduino Code).
+BUILD - IMAGE PROCESSING DESCRIPTION: Information on the algorithm and code created to join images (https://github.com/jmarini/nanoscope).
+
+ANALYSIS - EXPECTED PRFORMANCE: Estimation of resolution assuming perfect gears
+ANALYSIS - REAL PERFORMANCE: Qualitative analysis of a good acquisition; estimation of resolution; image collage software performance
+ANALYSIS - PROBLEMS: motor kickback, mechanical constraints (wobbles, deformations, ...);
+ANALYSIS - SUGGESTIONS: Sanity check system w/ rotary encoders; better structures (metal); better motors; utilizing built-in afm steppers (hack nanoscope code somehow?); use ML in image collage software?
+
+CONCLUSION - ...
+
+REFERENCES - AFM automation spanish paper, theoretical model papers (dForce,...) ... 
+
