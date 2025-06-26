@@ -56,6 +56,8 @@ byte rowPins[ROWS] = {A5, 4, 5, 6}; // Row pins. Change accordingly.
 byte colPins[COLS] = {0, 1, A4};    // Collumn pins. Change accordingly.
 Keypad keypad = Keypad( makeKeymap(keys), rowPins, colPins, ROWS, COLS );
 
+const byte resetButtonPin = A3;
+
 /* ///////////////////////
         SENSOR PINS
 */ ///////////////////////
@@ -247,10 +249,11 @@ void saveToEEPROM(){
         INSTRUMENTATION ROUTINES
 */ /////////////////////////////////
 
-// Move one of the motors, given their pins. NOTE: ADD UPDATE TO POS_X AND POS_Y!!!
+// Move one of the motors, given their pins.
 void moveMotor(byte stepPin, byte dirPin, byte enablePin, long steps, long stepDelay, boolean direction, long* stepCounter){
   digitalWrite(enablePin, LOW);
   digitalWrite(dirPin, direction);
+  delay(2*stepDelay);
   for (int x = 0; x < steps; x++) {
     digitalWrite(stepPin, HIGH);
     delay(stepDelay/2);
@@ -290,6 +293,8 @@ void acquireAFMImage(int lines, int Hz){
       updateDisplay();
       if ( (CurrentTimeEngage - StartTimeEngage) > timeEngaging ) engaging = false;
       if (keypad.getKey()) engaging = false;
+      ////////// RESET BUTTON !!!!
+      if (!digitalRead(resetButtonPin)) {return;}
     }
     
     // Standard Delay
@@ -361,9 +366,129 @@ void acquireAFMImage(int lines, int Hz){
 
       if (keypad.getKey()) break;
 
+      ////////// RESET BUTTON !!!!
+      if (!digitalRead(resetButtonPin)) {return;}
+
     }
     
     return 0;  
+}
+
+void acquisitionRoutine(){
+      // Calculate scaling factors
+      lcdLine1 = "Calculating";
+      lcdLine2 = "scaling factors";
+      updateDisplay();
+      delay(timeDisplay);
+      xStepsToRealMean = 0;
+      yStepsToRealMean = 0;
+      xStepsToRealN = 0;
+      yStepsToRealN = 0;
+      for (int factor = 0; factor < calibrationPointsMax; factor++){
+        if (xStepsToReal[factor] > 0){
+          xStepsToRealN += 1;
+          xStepsToRealMean += xStepsToReal[factor];
+        }
+        if (yStepsToReal[factor] > 0){
+          yStepsToRealN += 1;
+          yStepsToRealMean += yStepsToReal[factor];
+        }
+      }
+      if (xStepsToRealN > 0) xStepsToRealMean /= float(xStepsToRealN);
+      if (yStepsToRealN > 0) yStepsToRealMean /= float(yStepsToRealN);
+      if (xStepsToRealN == 0 || yStepsToRealN == 0) {
+        lcdLine1 = "ERROR! Need";
+        lcdLine2 = "Calibration!";
+        updateDisplay();
+        delay(timeDisplay);
+        switchMenu(2);
+      } else {
+
+      // Scaling Factors Display
+      msg_operation = "X:"+String(xStepsToRealMean, 3);
+      msg_operation2 = "Y:"+String(yStepsToRealMean, 3);
+      lcdLine1 = msg_operation.c_str();
+      lcdLine2 = msg_operation2.c_str();
+      updateDisplay();
+      delay(timeDisplay);
+      
+      // Confirm Autotuning
+      lcdLine1 = "Confirm (#):";
+      lcdLine2 = "Autotuned?";
+      boolean autotuning = true;
+      while (autotuning) {
+        updateDisplay();
+        if (keypad.getKey() == '#') autotuning = false;
+        ////////// RESET BUTTON !!!!
+        if (!digitalRead(resetButtonPin)) {switchMenu(0); return;}
+      }
+
+      // Confirm Lines+Hz
+      lcdLine1 = "Confirm (#):";
+      msg_operation = "mHz:"+String(Hz)+", Lines:"+String(lines);
+      lcdLine2 = msg_operation.c_str();
+      boolean lineshz = true;
+      while (lineshz) {
+        startLoopTime = millis();
+        lcdHorizontalScrollCounter1 += loopDt;
+        lcdHorizontalScrollCounter2 += loopDt;
+        lcdVerticalScrollCounter += loopDt;
+        updateDisplay();
+        if (keypad.getKey() == '#') lineshz = false;
+        endLoopTime = millis();
+        loopDt = endLoopTime - startLoopTime;
+        ////////// RESET BUTTON !!!!
+        if (!digitalRead(resetButtonPin)) {switchMenu(0); return;}
+      }
+      
+      // Message
+      lcdLine1 = "----STARTING----";
+      lcdLine2 = "--ACQUISITION---";
+      updateDisplay();
+      delay(timeDisplay);
+  
+      
+      // Move the steppers and acquire images
+      for (int i = 0; i < rows; i++){
+        for(int j = 0; j < cols; j++){
+          // Acquire image ij
+          lcdLine1 = "Acquiring image:";
+          msg_operation = "i:"+String(i)+" j:"+String(j);
+          lcdLine2 = msg_operation.c_str();
+          updateDisplay();
+          delay(timeDisplay);
+          acquireAFMImage(lines, Hz);
+          if (!digitalRead(resetButtonPin)) {switchMenu(0); return;}
+          // Move motor along collumns
+          lcdLine1 = "Powering X+ ...";
+          lcdLine2 = " ";
+          updateDisplay();
+          moveMotor(stepPinX, dirPinX, enablePinX, long(round(float(imgStep)/xStepsToRealMean)), 10, 1, &steps_X);
+        }
+        // Go back to the beginning of the row
+        lcdLine1 = "Powering X- ...";
+        lcdLine2 = " ";
+        updateDisplay();
+        moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)/xStepsToRealMean)), 10, 0, &steps_X);
+        // Go down one row
+        lcdLine1 = "Powering Y- ...";
+        lcdLine2 = " ";
+        updateDisplay();
+        moveMotor(stepPinY, dirPinY, enablePinY, long(round(float(imgStep)/yStepsToRealMean)), 10, 0, &steps_Y);
+      }
+
+      // Homing
+      lcdLine1 = "FINISHED";
+      lcdLine2 = "Homing ...";
+      updateDisplay();
+      delay(timeDisplay);
+      // moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)/xStepsToRealMean)), 10, 0, &steps_X);
+      moveMotor(stepPinY, dirPinY, enablePinY, (rows+1)*long(round(float(imgStep)/yStepsToRealMean)), 10, 1, &steps_Y);
+
+      // End routine
+      switchMenu(2);
+      
+      }
 }
 
 /* ///////////////////////
@@ -796,116 +921,8 @@ void menuLoop(){
     */
     
     case 21:
-      
-      // Calculate scaling factors
-      lcdLine1 = "Calculating";
-      lcdLine2 = "scaling factors";
-      updateDisplay();
-      delay(timeDisplay);
-      xStepsToRealMean = 0;
-      yStepsToRealMean = 0;
-      xStepsToRealN = 0;
-      yStepsToRealN = 0;
-      for (int factor = 0; factor < calibrationPointsMax; factor++){
-        if (xStepsToReal[factor] > 0){
-          xStepsToRealN += 1;
-          xStepsToRealMean += xStepsToReal[factor];
-        }
-        if (yStepsToReal[factor] > 0){
-          yStepsToRealN += 1;
-          yStepsToRealMean += yStepsToReal[factor];
-        }
-      }
-      if (xStepsToRealN > 0) xStepsToRealMean /= float(xStepsToRealN);
-      if (yStepsToRealN > 0) yStepsToRealMean /= float(yStepsToRealN);
-      if (xStepsToRealN == 0 || yStepsToRealN == 0) {
-        lcdLine1 = "ERROR! Need";
-        lcdLine2 = "Calibration!";
-        updateDisplay();
-        delay(timeDisplay);
-        switchMenu(2);
-      } else {
 
-      // Scaling Factors Display
-      msg_operation = "X:"+String(xStepsToRealMean, 3);
-      msg_operation2 = "Y:"+String(yStepsToRealMean, 3);
-      lcdLine1 = msg_operation.c_str();
-      lcdLine2 = msg_operation2.c_str();
-      updateDisplay();
-      delay(timeDisplay);
-      
-      // Confirm Autotuning
-      lcdLine1 = "Confirm (#):";
-      lcdLine2 = "Autotuned?";
-      boolean autotuning = true;
-      while (autotuning) {
-        updateDisplay();
-        if (keypad.getKey() == '#') autotuning = false; 
-      }
-
-      // Confirm Lines+Hz
-      lcdLine1 = "Confirm (#):";
-      msg_operation = "mHz:"+String(Hz)+", Lines:"+String(lines);
-      lcdLine2 = msg_operation.c_str();
-      boolean lineshz = true;
-      while (lineshz) {
-        startLoopTime = millis();
-        lcdHorizontalScrollCounter1 += loopDt;
-        lcdHorizontalScrollCounter2 += loopDt;
-        lcdVerticalScrollCounter += loopDt;
-        updateDisplay();
-        if (keypad.getKey() == '#') lineshz = false;
-        endLoopTime = millis();
-        loopDt = endLoopTime - startLoopTime;
-      }
-      
-      // Message
-      lcdLine1 = "----STARTING----";
-      lcdLine2 = "--ACQUISITION---";
-      updateDisplay();
-      delay(timeDisplay);
-  
-      
-      // Move the steppers and acquire images
-      for (int i = 0; i < rows; i++){
-        for(int j = 0; j < cols; j++){
-          // Acquire image ij
-          lcdLine1 = "Acquiring image:";
-          msg_operation = "i:"+String(i)+" j:"+String(j);
-          lcdLine2 = msg_operation.c_str();
-          updateDisplay();
-          delay(timeDisplay);
-          acquireAFMImage(lines, Hz);
-          // Move motor along collumns
-          lcdLine1 = "Powering X+ ...";
-          lcdLine2 = " ";
-          updateDisplay();
-          moveMotor(stepPinX, dirPinX, enablePinX, long(round(float(imgStep)/xStepsToRealMean)), 10, 1, &steps_X);
-        }
-        // Go back to the beginning of the row
-        lcdLine1 = "Powering X- ...";
-        lcdLine2 = " ";
-        updateDisplay();
-        moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)/xStepsToRealMean)), 10, 0, &steps_X);
-        // Go down one row
-        lcdLine1 = "Powering Y- ...";
-        lcdLine2 = " ";
-        updateDisplay();
-        moveMotor(stepPinY, dirPinY, enablePinY, long(round(float(imgStep)/yStepsToRealMean)), 10, 0, &steps_Y);
-      }
-
-      // Homing
-      lcdLine1 = "FINISHED";
-      lcdLine2 = "Homing ...";
-      updateDisplay();
-      delay(timeDisplay);
-      moveMotor(stepPinX, dirPinX, enablePinX, cols*long(round(float(imgStep)/xStepsToRealMean)), 10, 0, &steps_X);
-      moveMotor(stepPinY, dirPinY, enablePinY, rows*long(round(float(imgStep)/yStepsToRealMean)), 10, 1, &steps_Y);
-
-      // End routine
-      switchMenu(2);
-      
-      }
+      acquisitionRoutine();
       break;
       
     
@@ -994,6 +1011,8 @@ void setup(){
   lcd.clear();
   // Serial Setup
   Serial.begin(9600);
+  // Reset button setup
+  pinMode(resetButtonPin, INPUT_PULLUP);
   // Motor setup
   pinMode(dirPinX, OUTPUT);
   pinMode(stepPinX, OUTPUT);
@@ -1019,6 +1038,10 @@ void loop() {
 
   // Time keeping
   startLoopTime = millis();
+
+  // Resetting
+  if (!digitalRead(resetButtonPin) && menu != 0) switchMenu(0);
+
 
   // Update counters
   lcdHorizontalScrollCounter1 += loopDt;

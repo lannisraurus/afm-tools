@@ -5,6 +5,7 @@ All the developed models were done using tinkercad (https://www.tinkercad.com/).
 - XSupport is the attachment that connects the X stepper with the X slider.
 - YSupport is the attachment that connects the Y stepper with the Y slider.
 - The other Support files are used to hold the stepper motors in place, and may have to be modified depending on the steppers used.
+- axisExtension3, which was used to extend the axis on the Y direction; courtesy of Prof. Dr. Luís Melo.
 
 The original file is present here, named SYSTEM.
 

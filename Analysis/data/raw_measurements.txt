@@ -1,0 +1,64 @@
+######## MULTI-ENGAGE EXPERIMENT - X (um), Y (um)
+# Anchor point chosen: top+left. 3rd Grid intersection point counting from the left in 016 (well visible, there is just a strip at the top of the image)
+
+# 016
+3.33, 2.35
+3.35, 2.41
+3.38, 2.38
+
+# 017
+3.58, 2.61
+3.55, 2.58
+3.61, 2.61
+
+# 018
+3.75, 2.44
+3.52, 2.46
+3.58, 2.44
+
+
+
+
+######## CALIBRATION CALCULATION in X - X1 (um), X2 (um)
+# Measured from left. S=64.
+
+# 020->021: chose a grid point below to the big debris blob.
+9.08, 1.98
+9.11, 2.01
+9.05, 1.98
+
+# 021->022: At the very top of the image, there are two debris points. Going down in a vertical line, a bit after half the height, there is a grid point.
+5.19, 0.95
+5.10, 0.97
+5.19, 0.92
+
+# 022->023: At the top right corner, there is a diagonal lighter dash. I choose a grid point which it points to.
+8.68, 1.78
+8.74, 1.83
+8.71, 1.83
+
+
+
+
+######## KICKBACK in X - X1 (um)
+# Measured from left. S=64.
+
+# 027 (-S)
+5.13
+5.10
+5.16
+
+# 028 (+S)
+4.70
+4.64
+4.70
+
+# 029 (-S)
+4.93
+4.93
+4.96
+
+# 030 (+S)
+4.64
+4.61
+4.64
