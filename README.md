@@ -1,2 +1,3 @@
-# Introduction
-Work in progress! Project description and instructions will be available soon...
+# Programme Flowchart
+
+![Models/flowchart.png]
