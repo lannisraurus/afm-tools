@@ -1,3 +1,3 @@
 # Programme Flowchart
 
-![Models/flowchart.png]
+![Flowchart](Models/flowchart.png)
